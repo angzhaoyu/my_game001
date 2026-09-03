@@ -1,12 +1,15 @@
 /**
  * 运行时物品目录。数据由 /api/v1/game/bootstrap 下发；本文件不再生成测试背包。
  */
-import type { ItemDef, ShopDef } from '../data/ItemData';
+import type { ItemCategory, ItemDef, ShopDef } from '../data/ItemData';
 export const ALL_ITEMS: ItemDef[] = [];
 export const SEED_ITEMS: ItemDef[] = [];
 export const FRUIT_ITEMS: ItemDef[] = [];
 export const FERT_ITEMS: ItemDef[] = [];
+export const MEDICINE_ITEMS: ItemDef[] = [];
 export const SHOP_ITEMS: ShopDef[] = [];
+
+const CATEGORIES: ItemCategory[] = ['seed', 'fruit', 'fert', 'medicine'];
 
 export function applyItemCatalog(items: any[], shopItems: any[]): void {
   const clean = (Array.isArray(items) ? items : [])
@@ -15,13 +18,14 @@ export function applyItemCatalog(items: any[], shopItems: any[]): void {
       id: String(row.id),
       name: String(row.name || row.id),
       icon: String(row.icon || ''),
-      category: row.category,
+      category: (CATEGORIES.includes(row.category) ? row.category : 'fruit') as ItemCategory,
       value: Math.max(0, Number(row.value) || 0),
     })) as ItemDef[];
   ALL_ITEMS.splice(0, ALL_ITEMS.length, ...clean);
   SEED_ITEMS.splice(0, SEED_ITEMS.length, ...clean.filter(item => item.category === 'seed'));
   FRUIT_ITEMS.splice(0, FRUIT_ITEMS.length, ...clean.filter(item => item.category === 'fruit'));
   FERT_ITEMS.splice(0, FERT_ITEMS.length, ...clean.filter(item => item.category === 'fert'));
+  MEDICINE_ITEMS.splice(0, MEDICINE_ITEMS.length, ...clean.filter(item => item.category === 'medicine'));
 
   const byId = new Map(clean.map(item => [item.id, item]));
   const shops: ShopDef[] = (Array.isArray(shopItems) ? shopItems : [])

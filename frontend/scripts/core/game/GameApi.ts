@@ -2,8 +2,12 @@ import { http } from '../network/HttpClient';
 import type { GameCommandType, GameSnapshot } from '../network/Contracts';
 
 export class GameApi {
-  bootstrap(): Promise<GameSnapshot> {
-    return http.get<GameSnapshot>('/game/bootstrap');
+  /** includeCatalog=false 时服务端不重复下发目录，用于轮询刷新。 */
+  bootstrap(includeCatalog = true): Promise<GameSnapshot> {
+    return http.get<GameSnapshot>(
+      '/game/bootstrap',
+      includeCatalog ? undefined : { params: { catalog: '0' } },
+    );
   }
 
   command(

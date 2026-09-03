@@ -15,6 +15,8 @@ const C_TITLE   = new Color(255, 233, 176, 255);
 const C_TEXT    = new Color(243, 232, 207, 255);
 const C_TEXT_D  = new Color(58, 42, 18, 255);
 
+type ShopCategory = 'seed' | 'fert' | 'medicine';
+
 @ccclass('ShopPanel')
 export class ShopPanel extends Component {
   inventory!: InventoryModel;
@@ -27,9 +29,12 @@ export class ShopPanel extends Component {
   private scrollView: ScrollView | null = null;
   private contentNode: Node | null = null;
   private goldLabel: Label | null = null;
-  private tabs: { node: Node; lb: Label | null; cat: 'seed' | 'fert' }[] = [];
+  private tabs: { node: Node; lb: Label | null; cat: ShopCategory }[] = [];
 
-  private category: 'seed' | 'fert' = 'seed';
+  /** 关闭回调：施肥框跳转商店后靠它回到施肥框 */
+  onClose: () => void = () => {};
+
+  private category: ShopCategory = 'seed';
   isOpen = false;
 
   onLoad() {
@@ -80,8 +85,8 @@ export class ShopPanel extends Component {
     }
 
     if (toolbar) {
-      const catList: ('seed' | 'fert')[] = ['seed', 'fert'];
-      const tabNames = ['tab', 'tab-001'];
+      const catList: ShopCategory[] = ['seed', 'fert', 'medicine'];
+      const tabNames = ['tab', 'tab-001', 'tab-002'];
       tabNames.forEach((name, i) => {
         const tabNode = toolbar.getChildByName(name);
         if (tabNode) {
@@ -143,8 +148,10 @@ export class ShopPanel extends Component {
   }
 
   close() {
+    if (!this.isOpen) return;
     this.isOpen = false;
     this.node.active = false;
+    this.onClose();
   }
 
   render() {
@@ -193,14 +200,14 @@ export class ShopPanel extends Component {
     }
   }
 
-  private setCategory(c: 'seed' | 'fert') {
+  private setCategory(c: ShopCategory) {
     this.category = c;
     this.refreshTab();
     this.render();
   }
 
   private refreshTab() {
-    const idx = ['seed', 'fert'].indexOf(this.category);
+    const idx = (['seed', 'fert', 'medicine'] as ShopCategory[]).indexOf(this.category);
     this.tabs.forEach((t, i) => {
       const active = i === idx;
       if (t.lb) {

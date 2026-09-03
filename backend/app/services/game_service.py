@@ -14,14 +14,14 @@ class GameService:
         self.engine = engine or GameEngine()
         self.clock = clock or (lambda: int(time.time() * 1000))
 
-    def bootstrap(self, user_id: int) -> Dict[str, Any]:
+    def bootstrap(self, user_id: int, *, include_catalog: bool = True) -> Dict[str, Any]:
         now_ms = int(self.clock())
         with self.repository.transaction() as unit:
             state = unit.load(user_id, lock=True)
             if self.engine.advance(state, now_ms):
                 state.version += 1
                 unit.save(state)
-            return snapshot(state, now_ms, include_catalog=True)
+            return snapshot(state, now_ms, include_catalog=include_catalog)
 
     def command(
         self,

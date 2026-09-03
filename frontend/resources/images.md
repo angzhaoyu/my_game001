@@ -1,5 +1,27 @@
 **图片资源清单（整理版）**
 
+### 〇、作物图片（v1.10）
+
+每种作物 3 个阶段图，命名为 `Crop_Data` 的 ID 加 `-01 / -02 / -03`，例如：
+
+```text
+assets/resources/farm/crop/
+├─ longan-01.png   longan-02.png   longan-03.png
+├─ lemon-01.png    …
+└─ tomato-01.png   tomato-02.png   tomato-03.png
+```
+
+另外每种作物还有种子与果实图（土地上用不到，用于背包/商店）：
+
+```text
+assets/resources/textures/items/
+├─ seed_longan.png   fruit_longan.png
+└─ …
+```
+
+化肥图标为 `fert_<肥料ID>`（如 `fert_npk_15`、`fert_compost`），
+药品图标为 `med_<药品ID>`（如 `med_insecticide_basic`、`med_fungicide_basic`）。
+
 ### 一、工具光标与用户动画
 
 #### 1. 默认光标（推荐直接复用，无需新增）

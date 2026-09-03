@@ -1,9 +1,12 @@
 /**
- * 农场场景装配层：只负责 Cocos 节点绑定、远端快照投影和命令分发。
- * 金币/背包/土地不再由客户端整包覆盖，服务端是唯一权威来源。
+ * 农场场景装配层：只负责把 Cocos 场景里已经搭好的节点与脚本绑定起来，
+ * 并把服务端快照投影到这些节点上。金币/背包/土地不在客户端修改，服务端是唯一权威。
+ *
+ * 所有面板、土块、动画都是 Cocos 里的节点；这里只做「取组件 + 注入依赖 + 绑定事件」。
  */
 import {
-  _decorator, Button, Component, director, Game, game as cocosGame, Label, Node, ResolutionPolicy, Sprite, view,
+  _decorator, Button, Component, director, Game, game as cocosGame, Label, Node,
+  ResolutionPolicy, Sprite, view,
 } from 'cc';
 import { InventoryModel } from './data/InventoryModel';
 import { PlayerModel } from './data/PlayerModel';
@@ -13,8 +16,14 @@ import { ShopPanel } from './ui/ShopPanel';
 import { Toast } from './ui/Toast';
 import { LandView } from './ui/LandView';
 import type { ToolMode } from './ui/LandView';
+import { SoilInfoPanel } from './ui/SoilInfoPanel';
+import { WaterPrompt } from './ui/WaterPrompt';
+import { FertilizePanel } from './ui/FertilizePanel';
+import { ItemPickerPanel } from './ui/ItemPickerPanel';
+import { WeatherHud } from './ui/WeatherHud';
 import { SessionStore } from '../core/auth/SessionStore';
 import { applyRemoteCatalog } from '../core/game/RemoteCatalog';
+import { applyWorldSnapshot } from './config/WeatherConfig';
 import { ApiError } from '../core/network/HttpClient';
 import type { GameCommandType, GameSnapshot } from '../core/network/Contracts';
 import { gameSync } from '../core/sync/GameSyncService';
@@ -23,15 +32,26 @@ import type { GameActionFeedback } from './GameAction';
 const { ccclass, property } = _decorator;
 export const DESIGN_W = 1280;
 export const DESIGN_H = 720;
+/** 轮询间隔：服务端按分钟结算，客户端定期拉取最新快照 */
+const POLL_INTERVAL_SECONDS = 15;
 
 @ccclass('GameRoot')
 export class GameRoot extends Component {
+  // 场景节点（优先拖拽绑定，缺失时按名字查找）
+  @property({ type: Node }) public landsNode: Node | null = null;
+  @property({ type: Node }) public leftBar: Node | null = null;
   @property({ type: Node }) public backpackButton: Node | null = null;
   @property({ type: Node }) public shopButton: Node | null = null;
   @property({ type: Node }) public backpackPanelNode: Node | null = null;
   @property({ type: Node }) public shopPanelNode: Node | null = null;
   @property({ type: Node }) public goldLabelNode: Node | null = null;
   @property({ type: Node }) public toastNode: Node | null = null;
+  @property({ type: Node }) public weatherHudNode: Node | null = null;
+  @property({ type: Node }) public soilInfoNode: Node | null = null;
+  @property({ type: Node }) public waterPromptNode: Node | null = null;
+  @property({ type: Node }) public fertilizePanelNode: Node | null = null;
+  @property({ type: Node }) public seedPanelNode: Node | null = null;
+  @property({ type: Node }) public medicinePanelNode: Node | null = null;
 
   private player = new PlayerModel(0);
   private inventory = new InventoryModel();
@@ -44,6 +64,12 @@ export class GameRoot extends Component {
   private toast: Toast | null = null;
   private backpack: BackpackPanel | null = null;
   private shop: ShopPanel | null = null;
+  private weatherHud: WeatherHud | null = null;
+  private soilInfo: SoilInfoPanel | null = null;
+  private waterPrompt: WaterPrompt | null = null;
+  private fertilizePanel: FertilizePanel | null = null;
+  private seedPanel: ItemPickerPanel | null = null;
+  private medicinePanel: ItemPickerPanel | null = null;
   private unsubscribeSnapshot: (() => void) | null = null;
   private ready = false;
 
@@ -76,6 +102,7 @@ export class GameRoot extends Component {
         this.toast?.show(this.errorMessage(error), 2.5);
       }
     }
+    this.schedule(this.poll, POLL_INTERVAL_SECONDS);
   }
 
   onDestroy() {
@@ -90,8 +117,16 @@ export class GameRoot extends Component {
     });
   };
 
+  /** 定期拉取最新快照（不带目录，流量更小） */
+  private poll = () => {
+    if (!SessionStore.get()) return;
+    void gameSync.refresh().catch(() => { /* 轮询失败静默重试 */ });
+  };
+
   private applySnapshot(snapshot: GameSnapshot): void {
     applyRemoteCatalog(snapshot.catalog);
+    applyWorldSnapshot(snapshot.world);
+    this.farm.setHumidityModifier(snapshot.world?.humidityModifier ?? 1);
     this.player.loadJSON({
       gold: snapshot.profile.gold,
       userId: snapshot.profile.id,
@@ -101,9 +136,15 @@ export class GameRoot extends Component {
       energy: snapshot.profile.energy,
     });
     this.inventory.loadJSON(snapshot.inventory as any);
-    this.farm.loadJSON({ plots: snapshot.plots, lastTick: snapshot.lastTick });
+    this.farm.loadJSON({ plots: snapshot.plots as any, lastTick: snapshot.lastTick });
     this.refreshHud();
     this.landView?.render();
+    this.weatherHud?.refresh();
+    if (this.soilInfo?.isOpen) {
+      const plot = this.farm.getPlot(this.soilInfo.currentPlotId);
+      if (plot) this.soilInfo.render(plot, this.farm);
+    }
+    this.fertilizePanel?.refresh();
     if (this.backpack?.isOpen) this.backpack.render();
     if (this.shop?.isOpen) this.shop.render();
   }
@@ -137,12 +178,13 @@ export class GameRoot extends Component {
   }
 
   private refreshHud(): void {
-    // TopBar 已有 CoinsIcon / DiamondsIcon / EnergyIcon，Label 只显示数值。
     if (this.goldLabel) this.goldLabel.string = String(this.player.gold);
     if (this.levelLabel) this.levelLabel.string = `Lv.${this.player.level}`;
     if (this.diamondsLabel) this.diamondsLabel.string = String(gameSync.snapshot?.profile.diamonds ?? 0);
     if (this.energyLabel) this.energyLabel.string = String(this.player.energy);
   }
+
+  // ---------------- 场景绑定 ----------------
 
   private bindToolButton(leftBar: Node, childName: string, mode: Exclude<ToolMode, 'none'>) {
     const node = leftBar.getChildByName(childName);
@@ -153,7 +195,8 @@ export class GameRoot extends Component {
     node.off(Button.EventType.CLICK);
     node.on(Button.EventType.CLICK, () => {
       if (!this.landView) return;
-      const next = this.landView.currentTool === mode ? 'none' : mode;
+      // 再点一次同一个工具 → 取消
+      const next: ToolMode = this.landView.currentTool === mode ? 'none' : mode;
       const icon = node.getComponent(Sprite) || node.getComponentInChildren(Sprite);
       this.landView.setTool(next, next === 'none' ? null : (icon?.spriteFrame || null));
       const prompts: Record<Exclude<ToolMode, 'none'>, string> = {
@@ -179,19 +222,18 @@ export class GameRoot extends Component {
   private bindSceneNodes() {
     const root = this.node.scene || this.node;
     const goldNode = this.goldLabelNode || this.findNode(root, 'CoinsLabel') || this.findNode(root, 'gold_hud');
-    this.goldLabel = goldNode?.getComponent(Label) || goldNode?.getComponentInChildren(Label) || null;
-    const levelNode = this.findNode(root, 'LevelLabel');
-    this.levelLabel = levelNode?.getComponent(Label) || levelNode?.getComponentInChildren(Label) || null;
-    const diamondsNode = this.findNode(root, 'DiamondsLabel');
-    this.diamondsLabel = diamondsNode?.getComponent(Label) || diamondsNode?.getComponentInChildren(Label) || null;
-    const energyNode = this.findNode(root, 'EnergyLabel');
-    this.energyLabel = energyNode?.getComponent(Label) || energyNode?.getComponentInChildren(Label) || null;
+    this.goldLabel = labelOf(goldNode);
+    this.levelLabel = labelOf(this.findNode(root, 'LevelLabel'));
+    this.diamondsLabel = labelOf(this.findNode(root, 'DiamondsLabel'));
+    this.energyLabel = labelOf(this.findNode(root, 'EnergyLabel'));
 
     const toastNode = this.toastNode || this.findNode(root, 'Toast');
     if (toastNode) this.toast = toastNode.getComponent(Toast) || toastNode.addComponent(Toast);
 
     const action = (type: GameCommandType, payload: Record<string, unknown>) => this.executeAction(type, payload);
-    const lands = this.findNode(root, 'lands');
+
+    // ---- 土地 ----
+    const lands = this.landsNode || this.findNode(root, 'lands');
     if (lands) {
       this.landView = lands.getComponent(LandView) || lands.addComponent(LandView);
       this.landView.farm = this.farm;
@@ -204,9 +246,28 @@ export class GameRoot extends Component {
         this.findNode(root, 'ToolCursorLayer'),
         this.findNode(root, 'ToolEffectLayer'),
       );
+      // 面板注入（全部是 Cocos 场景节点上的组件）
+      this.soilInfo = componentOf(this.soilInfoNode || this.findNode(root, 'SoilInfoPanel'), SoilInfoPanel);
+      this.waterPrompt = componentOf(this.waterPromptNode || this.findNode(root, 'WaterPrompt'), WaterPrompt);
+      this.fertilizePanel = componentOf(
+        this.fertilizePanelNode || this.findNode(root, 'FertilizePanel'), FertilizePanel);
+      this.seedPanel = componentOf(this.seedPanelNode || this.findNode(root, 'SeedPanel'), ItemPickerPanel);
+      this.medicinePanel = componentOf(
+        this.medicinePanelNode || this.findNode(root, 'MedicinePanel'), ItemPickerPanel);
+      this.landView.soilInfoPanel = this.soilInfo;
+      this.landView.waterPrompt = this.waterPrompt;
+      this.landView.fertilizePanel = this.fertilizePanel;
+      this.landView.seedPicker = this.seedPanel;
+      this.landView.medicinePicker = this.medicinePanel;
+      this.landView.openShop = () => this.openShop();
+      this.landView.isShopOpen = () => !!this.shop?.isOpen;
     }
 
-    const leftBar = this.findNode(root, 'LeftBar') || this.findNode(root, 'LefttBar');
+    const weatherNode = this.weatherHudNode || this.findNode(root, 'WeatherHud');
+    this.weatherHud = componentOf(weatherNode, WeatherHud);
+
+    // ---- 左栏工具 ----
+    const leftBar = this.leftBar || this.findNode(root, 'LeftBar') || this.findNode(root, 'LefttBar');
     if (leftBar) {
       this.bindToolButton(leftBar, 'Water', 'water');
       this.bindToolButton(leftBar, 'Fertilizer', 'fert');
@@ -214,6 +275,7 @@ export class GameRoot extends Component {
       this.bindToolButton(leftBar, 'Shovel', 'shovel');
     }
 
+    // ---- 背包 / 商店 ----
     const backpackNode = this.backpackPanelNode || this.findNode(root, 'BackpackPanel');
     if (backpackNode) {
       this.backpack = backpackNode.getComponent(BackpackPanel) || backpackNode.addComponent(BackpackPanel);
@@ -230,6 +292,8 @@ export class GameRoot extends Component {
       this.shop.player = this.player;
       this.shop.onToast = (message, duration) => this.toast?.show(message, duration);
       this.shop.onAction = action;
+      // 施肥框跳转商店后，关闭商店自动回到施肥框
+      this.shop.onClose = () => { this.fertilizePanel?.restoreIfHidden(); };
     }
 
     this.bindOpenButton(
@@ -238,8 +302,13 @@ export class GameRoot extends Component {
     );
     this.bindOpenButton(
       this.shopButton || this.findNode(root, 'ShopBtn') || this.findNode(root, 'btn_shop_btn'),
-      () => { if (this.backpack?.isOpen) this.backpack.close(); this.shop?.open(); },
+      () => this.openShop(),
     );
+  }
+
+  private openShop(): void {
+    if (this.backpack?.isOpen) this.backpack.close();
+    this.shop?.open();
   }
 
   private bindOpenButton(node: Node | null, handler: () => void): void {
@@ -250,4 +319,13 @@ export class GameRoot extends Component {
     node.off(Button.EventType.CLICK);
     node.on(Button.EventType.CLICK, handler);
   }
+}
+
+function labelOf(node: Node | null): Label | null {
+  return node ? (node.getComponent(Label) || node.getComponentInChildren(Label)) : null;
+}
+
+function componentOf<T extends Component>(node: Node | null, type: new () => T): T | null {
+  if (!node) return null;
+  return node.getComponent(type) || node.addComponent(type);
 }

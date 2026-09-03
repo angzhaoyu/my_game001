@@ -83,8 +83,8 @@ export class BackpackPanel extends Component {
     }
 
     if (toolbar) {
-      const catList: (ItemCategory | 'all')[] = ['all', 'seed', 'fruit', 'fert'];
-      const tabNames = ['tab', 'tab-001', 'tab-002', 'tab-003'];
+      const catList: (ItemCategory | 'all')[] = ['all', 'seed', 'fruit', 'fert', 'medicine'];
+      const tabNames = ['tab', 'tab-001', 'tab-002', 'tab-003', 'tab-004'];
       tabNames.forEach((name, i) => {
         const tabNode = toolbar.getChildByName(name);
         if (tabNode) {
@@ -217,7 +217,8 @@ export class BackpackPanel extends Component {
   }
 
   private refreshTab() {
-    const idx = ['all', 'seed', 'fruit', 'fert'].indexOf(this.category);
+    const idx = (['all', 'seed', 'fruit', 'fert', 'medicine'] as (ItemCategory | 'all')[])
+      .indexOf(this.category);
     this.tabs.forEach((t, i) => {
       const active = i === idx;
       if (t.lb) {

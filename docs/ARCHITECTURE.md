@@ -33,7 +33,7 @@ MySQL 8
   "commandId": "550e8400-e29b-41d4-a716-446655440000",
   "expectedVersion": 18,
   "type": "buy_item",
-  "payload": { "itemId": "seed_wheat", "quantity": 1 }
+  "payload": { "itemId": "seed_shallot", "quantity": 1 }
 }
 ```
 
@@ -60,20 +60,26 @@ MySQL 8
 - 普通登录/注册 POST：默认不自动重试，避免没有幂等键的重复副作用；
 - 0/408/429/5xx：指数退避；普通 4xx 不重试。
 
-## 4. 时间与离线成长
+## 4. 时间与离线成长（数值系统 v1.10）
 
 - 服务端时间是唯一奖励时间；客户端时间只做视觉进度预览。
-- bootstrap/command 会按 UTC 和服务端 `last_simulated_at_ms` 推进作物、水分、肥力。
-- 单次最多补算 30 天，防止异常旧记录拖垮请求。
+- **结算粒度是 1 分钟**：`GameEngine.advance()` 按绝对分钟索引逐分钟重放，不足 1 分钟的余数保留到下一次。
+- 季节 / 天气 / 温度不是随机状态，而是 `world.py` 里的确定性函数 `f(世界种子, 绝对分钟)`：
+  - 季节 48 小时一轮（春→夏→秋→冬）；天气每 6 小时一变；基础温度每天 00:00（UTC）重算。
+  - 这样离线补算重放任意长度的历史都得到同一结果，不需要额外落库。
+- 单次最多补算 24 小时，防止异常旧记录拖垮请求。
 - 快照含 `serverTimeMs`；客户端计算时钟偏移，降低设备时钟错误造成的显示偏差。
+- 客户端每 15 秒用 `GET /game/bootstrap?catalog=0` 轮询，进度条按服务端给出的 `growthPerMinute` 插值。
 
 ## 5. 数据一致性
 
 一次游戏命令在同一 MySQL 事务中修改：
 
-- `player_states`（金币/经验/版本）；
-- `player_inventory`；
-- `farm_plots`；
+- `player_states`（金币/经验/版本/世界种子）；
+- `player_items`；
+- `player_farm_plots`；
+- `player_actions`（操作流水）；
+- `player_daily_economy`（当日经济统计，按天保留历史）；
 - `processed_commands`。
 
 `SELECT ... FOR UPDATE` 串行化同一玩家的并发写。跨玩家互不锁定。

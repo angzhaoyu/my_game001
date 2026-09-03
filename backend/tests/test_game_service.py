@@ -63,29 +63,29 @@ class GameServiceTest(unittest.TestCase):
         self.service = GameService(self.repo, clock=lambda: 1_000_001)
 
     def test_repeated_command_is_idempotent(self):
-        first = self.service.command(7, "command-0001", 1, "buy_item", {"itemId": "seed_wheat", "quantity": 2})
-        second = self.service.command(7, "command-0001", 1, "buy_item", {"itemId": "seed_wheat", "quantity": 2})
+        first = self.service.command(7, "command-0001", 1, "buy_item", {"itemId": "seed_shallot", "quantity": 2})
+        second = self.service.command(7, "command-0001", 1, "buy_item", {"itemId": "seed_shallot", "quantity": 2})
         self.assertEqual(first, second)
-        self.assertEqual(self.repo.state.coins, 464)
-        self.assertEqual(self.repo.state.inventory["seed_wheat"].count, 2)
+        self.assertEqual(self.repo.state.coins, 488)
+        self.assertEqual(self.repo.state.inventory["seed_shallot"].count, 2)
         self.assertEqual(self.repo.state.version, 2)
 
     def test_replay_returns_current_snapshot_without_executing_again(self):
-        self.service.command(7, "command-0003", 1, "buy_item", {"itemId": "seed_wheat"})
+        self.service.command(7, "command-0003", 1, "buy_item", {"itemId": "seed_shallot"})
         # 模拟另一台设备随后完成了一个操作。
         self.repo.state.coins += 10
         self.repo.state.version += 1
-        replay = self.service.command(7, "command-0003", 1, "buy_item", {"itemId": "seed_wheat"})
+        replay = self.service.command(7, "command-0003", 1, "buy_item", {"itemId": "seed_shallot"})
         self.assertEqual(replay["stateVersion"], 3)
-        self.assertEqual(replay["profile"]["coins"], 492)
-        self.assertEqual(self.repo.state.inventory["seed_wheat"].count, 1)
+        self.assertEqual(replay["profile"]["coins"], 504)
+        self.assertEqual(self.repo.state.inventory["seed_shallot"].count, 1)
 
     def test_stale_version_rolls_back(self):
         with self.assertRaises(VersionConflictError) as caught:
-            self.service.command(7, "command-0002", 99, "buy_item", {"itemId": "seed_wheat"})
+            self.service.command(7, "command-0002", 99, "buy_item", {"itemId": "seed_shallot"})
         self.assertEqual(caught.exception.details["currentVersion"], 1)
         self.assertEqual(self.repo.state.coins, 500)
-        self.assertNotIn("seed_wheat", self.repo.state.inventory)
+        self.assertNotIn("seed_shallot", self.repo.state.inventory)
 
     def test_bootstrap_contains_server_catalog_and_no_client_fixture(self):
         result = self.service.bootstrap(7)
