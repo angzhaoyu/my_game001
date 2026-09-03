@@ -1,0 +1,9 @@
+# Windows 命令脚本必须使用 CRLF，避免双击时 cmd.exe 解析异常。
+*.bat text eol=crlf
+
+# 其余源码统一 LF。
+*.py text eol=lf
+*.ts text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

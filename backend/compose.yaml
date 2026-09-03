@@ -1,0 +1,41 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: game_db
+      MYSQL_USER: game
+      MYSQL_PASSWORD: local-game-password
+      MYSQL_ROOT_PASSWORD: local-root-password
+      TZ: UTC
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - game_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ugame", "-plocal-game-password", "--silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build: .
+    environment:
+      APP_ENV: development
+      APP_SECRET: local-compose-secret-change-before-deploy
+      DB_HOST: mysql
+      DB_USER: game
+      DB_PASSWORD: local-game-password
+      DB_NAME: game_db
+      ENABLE_PASSWORD_AUTH: "true"
+      ALLOW_DEMO_SEED: "true"
+      ALLOWED_ORIGINS: http://localhost:7456,http://127.0.0.1:7456
+    command: ["sh", "-c", "python -m app.manage migrate && gunicorn --bind 0.0.0.0:8000 --workers 2 --threads 4 --timeout 30 --access-logfile - 'app:create_app()'"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  game_mysql:

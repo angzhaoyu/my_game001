@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "lib": ["ES2020", "DOM"]
+  },
+  "include": [
+    "scripts/core/**/*.ts",
+    "scripts/farm/config/**/*.ts",
+    "scripts/farm/data/ItemData.ts",
+    "scripts/farm/data/PlotData.ts"
+  ]
+}

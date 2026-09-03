@@ -1,0 +1,9 @@
+# 请替换为团队 GitHub 用户/团队；路径已经按职责拆分。
+/backend/app/domain/ @game-design @backend
+/backend/app/api/ @backend
+/backend/app/repositories/ @backend
+/backend/migrations/ @backend @dba
+/frontend/scripts/core/ @client
+/frontend/scripts/farm/ui/ @client @ui
+/frontend/resources/ @art
+/docs/ @tech-lead

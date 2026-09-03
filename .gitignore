@@ -1,0 +1,39 @@
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+coverage/
+
+# Cocos Creator generated directories
+frontend/library/
+frontend/temp/
+frontend/local/
+frontend/profiles/
+frontend/native/
+
+# Runtime logs/dumps
+*.log
+*.pid
+*.sql.gz

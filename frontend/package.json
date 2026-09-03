@@ -1,0 +1,10 @@
+{
+  "name": "farm-minigame-client-source",
+  "private": true,
+  "scripts": {
+    "typecheck:core": "tsc -p tsconfig.core.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2"
+  }
+}
