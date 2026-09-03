@@ -2,6 +2,11 @@
 
 这是一个面向微信小游戏上线的 Cocos Creator + Flask + MySQL 农场项目。项目已把原先的客户端整包存档改为**服务端权威命令模型**，并补充微信登录、短期令牌、幂等写入、状态版本、弱网重试、数据库迁移、容器与自动测试。
 
+玩法数值按 `farm_game_value_system_final_v1.10.md` 实现：1 分钟一次结算、季节/天气/温度、单一肥力、最佳肥料、病虫害与药品、品质五档、基础产量 10、每地每天最多播种 3 次、单地每日净收益上限 100 金币。前端按 `我想实现的.md` 的要求：**节点、动画、进度条、面板全部在 Cocos 里搭好，代码只负责唤醒/切图/填字/播动画**，可微调的参数都在组件属性上。
+
+- 场景节点与土地预制体的完整契约：[frontend/scenes/farm.scene.md](frontend/scenes/farm.scene.md)
+- 接口与命令：[docs/API.md](docs/API.md)
+
 团队日常开发只需要先看 [Explain.md 的“日常开发怎么分工”](Explain.md#日常开发怎么分工)；不要求每个人理解全部文件。
 
 ## 快速开始（本地联调）
@@ -24,7 +29,7 @@ Docker 和生产启动属于部署方式，见 [backend/README.md](backend/READM
 
 ```bash
 PYTHONPATH=backend python -m unittest discover -s backend/tests -v
-cd frontend && npm ci && npm run typecheck:core
+cd frontend && npm ci && npm run typecheck
 ```
 
 ### 3. 接入 Cocos

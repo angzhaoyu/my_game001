@@ -58,7 +58,11 @@ E:\soft\path\anaconda\envs\yolo_v5\python.exe
 - 客户端不能提交整包数据覆盖数据库；
 - 每个写操作使用 `commandId + stateVersion` 防重复扣款和多设备覆盖；
 - 游戏配置和测试数据由后端创建；
-- 旧原型表 `users/farm_plots/player_inventory` 不再读写，新表使用 `accounts/player_states/player_farm_plots/player_items`。
+- 旧原型表 `users/farm_plots/player_inventory` 不再读写，新表使用 `accounts/player_states/player_farm_plots/player_items`；
+- 数值系统 v1.10 由 `migrations/002_value_system_v1_10.sql` 落地：
+  新增 `player_actions`（操作流水）与 `player_daily_economy`（按天经济统计），
+  土地字段扩展为 `unlocked/soil_health/stage/stage_growth/pest*/disease*/active_fertilizers/active_medicines/quality_score/...`。
+  迁移会把旧存档的作物清空（旧作物表已整体替换为 v1.10 的 24 种），并把湿度/肥力/土壤健康重置为 70。
 
 ## 维护命令（普通启动不需要手动执行）
 

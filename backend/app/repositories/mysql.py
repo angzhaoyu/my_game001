@@ -6,13 +6,21 @@ player_states 行，从而保证多个设备/进程并发时不会重复扣款�
 from __future__ import annotations
 
 import json
+import time
 from contextlib import AbstractContextManager
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from ..domain.catalog import ITEMS, REGIONS, initial_inventory
+from ..domain.catalog import GROWTH_RULES, ITEMS, REGIONS, initial_inventory
 from ..domain.errors import AppError
-from ..domain.models import GameAggregate, InventoryEntry, Plot
+from ..domain.models import (
+    ActiveFertilizer,
+    ActiveMedicine,
+    DailyEconomy,
+    GameAggregate,
+    InventoryEntry,
+    Plot,
+)
 from ..settings import Settings
 
 try:
@@ -23,6 +31,9 @@ except ImportError:  # 允许只运行不需要数据库的领域单元测试
     DictCursor = None
 
 
+INITIAL_COINS = int(GROWTH_RULES["initialCoins"])
+
+
 def _epoch_ms(value: Any) -> int:
     if value is None:
         return 0
@@ -31,6 +42,24 @@ def _epoch_ms(value: Any) -> int:
             value = value.replace(tzinfo=timezone.utc)
         return int(value.timestamp() * 1000)
     return int(value)
+
+
+def _json_load(value: Any, default: Any) -> Any:
+    """MySQL JSON 列在不同驱动/版本下可能返回 str、bytes 或已解析对象。"""
+    if value is None:
+        return default
+    if isinstance(value, (list, dict)):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode("utf-8")
+    if isinstance(value, str):
+        if not value.strip():
+            return default
+        try:
+            return json.loads(value)
+        except ValueError:
+            return default
+    return default
 
 
 class MySQLUnitOfWork(AbstractContextManager):
@@ -60,7 +89,7 @@ class MySQLUnitOfWork(AbstractContextManager):
         with self.conn.cursor() as cur:
             cur.execute(
                 "SELECT u.id,u.username,u.display_name,u.region,u.created_at,"
-                "p.coins,p.diamonds,p.level,p.exp,p.energy,p.version,p.last_simulated_at_ms "
+                "p.coins,p.diamonds,p.level,p.exp,p.energy,p.version,p.last_simulated_at_ms,p.world_seed "
                 "FROM accounts u JOIN player_states p ON p.user_id=u.id WHERE u.id=%s" + suffix,
                 (user_id,),
             )
@@ -73,12 +102,22 @@ class MySQLUnitOfWork(AbstractContextManager):
             )
             inventory_rows = cur.fetchall()
             cur.execute(
-                "SELECT plot_index,developed,water,fertilizer,crop_id,planted_at_ms,progress,"
-                "harvestable,last_boost_key,last_watered_at_ms FROM player_farm_plots "
-                "WHERE user_id=%s ORDER BY plot_index",
+                "SELECT plot_index,unlocked,developed,water,fertilizer,soil_health,crop_id,stage,"
+                "stage_growth,plant_age_minutes,mature,pest_level,disease_level,pest_status,"
+                "disease_status,pest_onset_ms,disease_onset_ms,active_fertilizers,active_medicines,"
+                "quality_score,mature_yield,harvest_quantity,daily_plant_count,daily_net_income,"
+                "planted_at_ms,progress,harvestable,last_boost_key,last_watered_at_ms "
+                "FROM player_farm_plots WHERE user_id=%s ORDER BY plot_index",
                 (user_id,),
             )
             plot_rows = cur.fetchall()
+            cur.execute(
+                "SELECT day_index,seed_cost,fertilizer_cost,medicine_cost,land_unlock_cost,"
+                "gross_income,plant_count,harvest_count FROM player_daily_economy "
+                "WHERE user_id=%s ORDER BY day_index DESC LIMIT 1",
+                (user_id,),
+            )
+            economy_row = cur.fetchone()
 
         aggregate = GameAggregate(
             user_id=row["id"],
@@ -92,6 +131,17 @@ class MySQLUnitOfWork(AbstractContextManager):
             energy=int(row["energy"]),
             version=int(row["version"]),
             last_simulated_at_ms=int(row["last_simulated_at_ms"] or 0),
+            world_seed=str(row.get("world_seed") or ""),
+            daily=DailyEconomy.from_dict({
+                "dayIndex": economy_row["day_index"] if economy_row else 0,
+                "seedCost": economy_row["seed_cost"] if economy_row else 0,
+                "fertilizerCost": economy_row["fertilizer_cost"] if economy_row else 0,
+                "medicineCost": economy_row["medicine_cost"] if economy_row else 0,
+                "landUnlockCost": economy_row["land_unlock_cost"] if economy_row else 0,
+                "grossIncome": economy_row["gross_income"] if economy_row else 0,
+                "plantCount": economy_row["plant_count"] if economy_row else 0,
+                "harvestCount": economy_row["harvest_count"] if economy_row else 0,
+            }) if economy_row else DailyEconomy(),
         )
         aggregate.inventory = {
             str(item["item_id"]): InventoryEntry(
@@ -103,12 +153,37 @@ class MySQLUnitOfWork(AbstractContextManager):
         aggregate.plots = {
             int(plot["plot_index"]): Plot(
                 id=int(plot["plot_index"]),
+                unlocked=bool(plot["unlocked"]),
                 developed=bool(plot["developed"]),
-                water=float(plot["water"]),
-                fertilizer=float(plot["fertilizer"]),
+                fertility=float(plot["fertilizer"]),
+                soil_health=float(plot["soil_health"]),
+                moisture=float(plot["water"]),
                 crop_id=plot["crop_id"],
+                stage=int(plot["stage"] or 0),
+                stage_growth=float(plot["stage_growth"] or 0),
+                plant_age_minutes=float(plot["plant_age_minutes"] or 0),
+                mature=bool(plot["mature"]),
+                pest_level=float(plot["pest_level"] or 0),
+                disease_level=float(plot["disease_level"] or 0),
+                pest_status=str(plot["pest_status"] or "NONE"),
+                disease_status=str(plot["disease_status"] or "NONE"),
+                pest_onset_ms=int(plot["pest_onset_ms"]) if plot["pest_onset_ms"] is not None else None,
+                disease_onset_ms=int(plot["disease_onset_ms"]) if plot["disease_onset_ms"] is not None else None,
+                active_fertilizers=[
+                    ActiveFertilizer.from_dict(item)
+                    for item in _json_load(plot["active_fertilizers"], []) or []
+                ],
+                active_medicines=[
+                    ActiveMedicine.from_dict(item)
+                    for item in _json_load(plot["active_medicines"], []) or []
+                ],
+                quality_score=float(plot["quality_score"] or 60),
+                mature_yield=int(plot["mature_yield"] or 0),
+                harvest_quantity=int(plot["harvest_quantity"] or 0),
+                daily_plant_count=int(plot["daily_plant_count"] or 0),
+                daily_net_income=float(plot["daily_net_income"] or 0),
                 planted_at_ms=int(plot["planted_at_ms"] or 0),
-                progress=float(plot["progress"]),
+                progress=float(plot["progress"] or 0),
                 harvestable=bool(plot["harvestable"]),
                 last_boost_key=plot["last_boost_key"] or "",
                 last_watered_at_ms=int(plot["last_watered_at_ms"] or 0),
@@ -125,31 +200,79 @@ class MySQLUnitOfWork(AbstractContextManager):
         with self.conn.cursor() as cur:
             cur.execute(
                 "UPDATE player_states SET coins=%s,diamonds=%s,level=%s,exp=%s,energy=%s,"
-                "version=%s,last_simulated_at_ms=%s WHERE user_id=%s",
+                "version=%s,last_simulated_at_ms=%s,world_seed=%s WHERE user_id=%s",
                 (
                     state.coins, state.diamonds, state.level, state.exp, state.energy,
-                    state.version, state.last_simulated_at_ms, state.user_id,
+                    state.version, state.last_simulated_at_ms, state.world_seed, state.user_id,
                 ),
             )
             plot_rows = [
                 (
-                    state.user_id, plot.id, plot.developed, plot.water, plot.fertilizer,
-                    plot.crop_id, plot.planted_at_ms, plot.progress, plot.harvestable,
+                    state.user_id, plot.id, plot.unlocked, plot.developed, plot.moisture,
+                    plot.fertility, plot.soil_health, plot.crop_id, plot.stage, plot.stage_growth,
+                    plot.plant_age_minutes, plot.mature, plot.pest_level, plot.disease_level,
+                    plot.pest_status, plot.disease_status, plot.pest_onset_ms, plot.disease_onset_ms,
+                    json.dumps([item.to_dict() for item in plot.active_fertilizers], ensure_ascii=False),
+                    json.dumps([item.to_dict() for item in plot.active_medicines], ensure_ascii=False),
+                    plot.quality_score, plot.mature_yield, plot.harvest_quantity,
+                    plot.daily_plant_count, plot.daily_net_income,
+                    plot.planted_at_ms, plot.progress, plot.harvestable,
                     plot.last_boost_key, plot.last_watered_at_ms,
                 )
                 for plot in state.plots.values()
             ]
             cur.executemany(
                 "INSERT INTO player_farm_plots "
-                "(user_id,plot_index,developed,water,fertilizer,crop_id,planted_at_ms,progress,"
-                "harvestable,last_boost_key,last_watered_at_ms) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
-                "ON DUPLICATE KEY UPDATE developed=VALUES(developed),water=VALUES(water),"
-                "fertilizer=VALUES(fertilizer),crop_id=VALUES(crop_id),"
+                "(user_id,plot_index,unlocked,developed,water,fertilizer,soil_health,crop_id,stage,"
+                "stage_growth,plant_age_minutes,mature,pest_level,disease_level,pest_status,"
+                "disease_status,pest_onset_ms,disease_onset_ms,active_fertilizers,active_medicines,"
+                "quality_score,mature_yield,harvest_quantity,daily_plant_count,daily_net_income,"
+                "planted_at_ms,progress,harvestable,last_boost_key,last_watered_at_ms) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                "%s,%s,%s,%s,%s,%s) "
+                "ON DUPLICATE KEY UPDATE unlocked=VALUES(unlocked),developed=VALUES(developed),"
+                "water=VALUES(water),fertilizer=VALUES(fertilizer),soil_health=VALUES(soil_health),"
+                "crop_id=VALUES(crop_id),stage=VALUES(stage),stage_growth=VALUES(stage_growth),"
+                "plant_age_minutes=VALUES(plant_age_minutes),mature=VALUES(mature),"
+                "pest_level=VALUES(pest_level),disease_level=VALUES(disease_level),"
+                "pest_status=VALUES(pest_status),disease_status=VALUES(disease_status),"
+                "pest_onset_ms=VALUES(pest_onset_ms),disease_onset_ms=VALUES(disease_onset_ms),"
+                "active_fertilizers=VALUES(active_fertilizers),"
+                "active_medicines=VALUES(active_medicines),quality_score=VALUES(quality_score),"
+                "mature_yield=VALUES(mature_yield),harvest_quantity=VALUES(harvest_quantity),"
+                "daily_plant_count=VALUES(daily_plant_count),daily_net_income=VALUES(daily_net_income),"
                 "planted_at_ms=VALUES(planted_at_ms),progress=VALUES(progress),"
                 "harvestable=VALUES(harvestable),last_boost_key=VALUES(last_boost_key),"
                 "last_watered_at_ms=VALUES(last_watered_at_ms)",
                 plot_rows,
+            )
+            if state.pending_actions:
+                cur.executemany(
+                    "INSERT INTO player_actions (user_id,action_type,plot_id,crop_id,fertilizer_id,"
+                    "medicine_id,cost,income,day_index,created_at_ms) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    [
+                        (
+                            state.user_id, action["actionType"], action["plotId"], action["cropId"],
+                            action["fertilizerId"], action["medicineId"], action["cost"],
+                            action["income"], action["dayIndex"], action["timestampMs"],
+                        )
+                        for action in state.pending_actions
+                    ],
+                )
+                state.pending_actions.clear()
+            cur.execute(
+                "INSERT INTO player_daily_economy (user_id,day_index,seed_cost,fertilizer_cost,"
+                "medicine_cost,land_unlock_cost,gross_income,plant_count,harvest_count) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
+                "seed_cost=VALUES(seed_cost),fertilizer_cost=VALUES(fertilizer_cost),"
+                "medicine_cost=VALUES(medicine_cost),land_unlock_cost=VALUES(land_unlock_cost),"
+                "gross_income=VALUES(gross_income),plant_count=VALUES(plant_count),"
+                "harvest_count=VALUES(harvest_count)",
+                (
+                    state.user_id, state.daily.day_index, state.daily.seed_cost,
+                    state.daily.fertilizer_cost, state.daily.medicine_cost, state.daily.land_unlock_cost,
+                    state.daily.gross_income, state.daily.plant_count, state.daily.harvest_count,
+                ),
             )
             cur.execute("DELETE FROM player_items WHERE user_id=%s", (state.user_id,))
             inventory_rows = [
@@ -305,6 +428,15 @@ class MySQLRepository:
                     (max(1, retention_days),),
                 )
                 deleted = int(cur.rowcount)
+                # 流水与每日经济按天保留较久，便于对账；过期数据一并清理。
+                cur.execute(
+                    "DELETE FROM player_actions WHERE created_at_ms < %s",
+                    (int(time.time() * 1000) - 30 * 24 * 3600 * 1000,),
+                )
+                cur.execute(
+                    "DELETE FROM player_daily_economy WHERE day_index < %s",
+                    (int(time.time() * 1000) // 60000 // 1440 - 30,),
+                )
             conn.commit()
             return deleted
         except Exception:
@@ -337,12 +469,12 @@ class MySQLRepository:
     @staticmethod
     def _initialize_player(cur, user_id: int, now_ms: int) -> None:
         cur.execute(
-            "INSERT INTO player_states (user_id,last_simulated_at_ms) VALUES (%s,%s)",
-            (user_id, now_ms),
+            "INSERT INTO player_states (user_id,last_simulated_at_ms,world_seed,coins) VALUES (%s,%s,%s,%s)",
+            (user_id, now_ms, f"{user_id}:{now_ms}:farm", INITIAL_COINS),
         )
         cur.executemany(
-            "INSERT INTO player_farm_plots (user_id,plot_index) VALUES (%s,%s)",
-            [(user_id, index) for index in range(1, 25)],
+            "INSERT INTO player_farm_plots (user_id,plot_index,unlocked) VALUES (%s,%s,%s)",
+            [(user_id, index, index == 1) for index in range(1, 25)],
         )
         cur.executemany(
             "INSERT INTO player_items (user_id,item_id,count,acquired_at_ms) VALUES (%s,%s,%s,%s)",

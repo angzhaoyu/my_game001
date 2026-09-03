@@ -17,6 +17,8 @@ export class ApiError extends Error {
 
 export interface RequestOptions {
   body?: unknown;
+  /** GET 查询参数，例如 { catalog: '0' } */
+  params?: Record<string, string | number | boolean>;
   authenticated?: boolean;
   /** POST 只有具备 commandId 等幂等键时才应开启。 */
   idempotent?: boolean;
@@ -94,7 +96,7 @@ export class HttpClient {
   }
 
   private raw(method: 'GET' | 'POST', path: string, options: RequestOptions): Promise<RawResponse> {
-    const url = `${RUNTIME.apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+    const url = `${RUNTIME.apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}${queryString(options.params)}`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-Request-ID': requestId(),
@@ -135,6 +137,15 @@ export class HttpClient {
       xhr.send(options.body === undefined ? undefined : JSON.stringify(options.body));
     });
   }
+}
+
+/** 把查询参数拼到 URL 上；wx.request 与 XHR 都只吃拼好的 URL。 */
+function queryString(params: Record<string, string | number | boolean> | undefined): string {
+  if (!params) return '';
+  const pairs = Object.keys(params)
+    .filter(key => params[key] !== undefined)
+    .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`);
+  return pairs.length ? `?${pairs.join('&')}` : '';
 }
 
 export const http = new HttpClient();

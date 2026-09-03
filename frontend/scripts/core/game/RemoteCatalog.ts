@@ -3,6 +3,8 @@ import { applyCropCatalog } from '../../farm/config/CropConfig';
 import { applyItemCatalog } from '../../farm/config/ItemConfig';
 import { applyLandRules } from '../../farm/config/LandConfig';
 import { applyWeatherConfig } from '../../farm/config/WeatherConfig';
+import { applyFertilizerCatalog } from '../../farm/config/FertilizerConfig';
+import { applyMedicineCatalog } from '../../farm/config/MedicineConfig';
 
 let appliedVersion = '';
 
@@ -10,7 +12,9 @@ export function applyRemoteCatalog(catalog: RemoteCatalog | undefined): void {
   if (!catalog || !catalog.version || catalog.version === appliedVersion) return;
   applyItemCatalog(catalog.items, catalog.shopItems);
   applyCropCatalog(catalog.crops);
-  applyLandRules(catalog.land, catalog.shopItems);
-  applyWeatherConfig(catalog.weather);
+  applyFertilizerCatalog(catalog.fertilizers);
+  applyMedicineCatalog(catalog.medicines);
+  applyLandRules(catalog.land);
+  applyWeatherConfig({ definitions: catalog.weather?.definitions, seasons: catalog.seasons });
   appliedVersion = catalog.version;
 }

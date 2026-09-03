@@ -12,6 +12,11 @@ my_game/
 │   ├── app/
 │   │   ├── api/                   # HTTP 适配层：鉴权、参数接收、统一响应
 │   │   ├── domain/                # 纯领域：农场规则、目录、模型、错误
+│   │   │   ├── catalog.py         # 权威配置：24 种作物 / 肥料 / 药品 / 土地 / 数值
+│   │   │   ├── world.py           # 季节、天气、温度（按世界种子+现实时间的确定性函数）
+│   │   │   ├── rules.py           # 成长 / 品质 / 产量 / 病虫害的纯公式
+│   │   │   ├── game.py            # 每分钟结算 + 玩家命令
+│   │   │   └── models.py / serialization.py / errors.py
 │   │   ├── services/              # 用例：登录、bootstrap、幂等命令
 │   │   ├── repositories/          # MySQL 适配器与事务
 │   │   ├── __init__.py            # 唯一 Flask 应用工厂
@@ -31,12 +36,12 @@ my_game/
 │   │   │   ├── game/              # 游戏 API 与远端配置装载
 │   │   │   ├── network/           # wx.request/XHR、超时、退避重试
 │   │   │   ├── storage/           # wx/localStorage 统一适配
-│   │   │   └── sync/              # 幂等命令队列、版本冲突恢复
+│   │   │   └── sync/              # 幂等命令队列、版本冲突恢复、轮询刷新
 │   │   ├── login/                 # 登录场景表现层
 │   │   └── farm/
 │   │       ├── config/            # 服务端配置的运行时镜像（只用于显示）
-│   │       ├── data/              # 客户端展示模型
-│   │       ├── ui/                # Cocos 组件
+│   │       ├── data/              # 客户端展示模型（服务端快照的只读投影）
+│   │       ├── ui/                # Cocos 组件（只唤醒节点，不创建节点）
 │   │       ├── GameAction.ts      # UI 到应用层的命令接口
 │   │       └── GameRoot.ts        # 场景装配与快照投影
 │   ├── scenes/                    # 场景节点契约文档
@@ -54,7 +59,7 @@ my_game/
 
 | 负责人 | 主要目录 | 不需要关心 |
 |---|---|---|
-| UI/交互 | `frontend/scripts/farm/ui/`、场景、资源 | HTTP、MySQL、令牌 |
+| UI/交互 | `frontend/scenes/*.scene.md`、`frontend/scripts/farm/ui/`、资源 | HTTP、MySQL、令牌 |
 | 前端逻辑 | `frontend/scripts/farm/GameRoot.ts`、`frontend/scripts/core/network/Contracts.ts` | SQL、Flask 路由细节 |
 | 后端玩法 | `backend/app/domain/game.py`、`catalog.py`、`backend/tests/` | Cocos 节点和动画 |
 | 后端数据 | `backend/app/domain/models.py`、`repositories/mysql.py`、`migrations/` | Cocos UI |
@@ -94,12 +99,26 @@ def _handle_remove_crop(self, state, payload, now_ms):
 例如任务系统需要 `daily_task_count`：
 
 1. 后端数据负责人修改 `domain/models.py`；
-2. 新增一个 `migrations/002_*.sql`；
+2. 新增一个 `migrations/00N_*.sql`（注意：迁移执行器按 `;` 切分语句，SQL 字符串里不要出现分号）；
 3. 在 `repositories/mysql.py` 增加读取和保存；
 4. 玩法负责人在 `domain/game.py` 使用该字段；
 5. 前端只接收后端快照，不自己伪造字段。
 
 只有需要永久保存的新数据才走这一步。不要为纯 UI 动画增加数据库字段。
+
+### 情况二·补充：前端新增 UI 的正确做法
+
+本项目的硬性约定是 **UI 在 Cocos 里搭，代码只负责唤醒**：
+
+1. 先在 `frontend/scenes/*.scene.md` 写清节点层级（含土地预制体的子节点）；
+2. 在 Cocos 里把节点、动画、进度条、面板摆好，挂上对应脚本；
+3. 脚本只做三件事：切 `active`、换 `spriteFrame`、播已经做好的 `Animation`；
+4. 需要调的参数做成组件 `@property`（例如缺肥/缺水阈值、土块贴图路径模板），
+   在属性检查器里调，不改代码；
+5. 列表类单元格用编辑器预置的节点，数量不够时克隆第一个作为模板（参考 `BackpackPanel`）。
+
+不要在运行时 `new Node()` 拼 UI，也不要用代码生成动画；`typings/cc.d.ts`
+只用于类型检查，构建时排除 `typings/` 目录。
 
 ### 情况三：独立系统
 

@@ -1,54 +1,92 @@
-export type WeatherType = 'sunny' | 'cloudy' | 'rainy' | 'night';
+/**
+ * 季节 / 天气配置的运行时镜像。
+ * 真实季节、天气、温度由服务端按现实时间确定性计算并通过快照的 `world` 下发，
+ * 这里只保存名称映射和最近一次快照，供 WeatherHud 的 Label 显示（不做动画）。
+ */
+import type { WorldData } from '../data/PlotData';
 
-export interface WeatherDef {
-  type: WeatherType;
+export interface SeasonDef {
+  id: string;
   name: string;
-  temp: number;
-  drainPerHour: number;
-  color: string;
+  temp: [number, number];
 }
 
-export const WEATHER: Record<WeatherType, WeatherDef> = {
-  sunny: { type: 'sunny', name: '晴', temp: 38, drainPerHour: 8.3, color: '#ffd54a' },
-  cloudy: { type: 'cloudy', name: '多云', temp: 30, drainPerHour: 5.5, color: '#b8c4d0' },
-  rainy: { type: 'rainy', name: '雨', temp: 25, drainPerHour: 1.5, color: '#7fb8e6' },
-  night: { type: 'night', name: '夜', temp: 22, drainPerHour: 2.5, color: '#4a5a7a' },
+export interface WeatherDef {
+  id: string;
+  name: string;
+  tempModifier: number;
+  humidityModifier: number;
+  pestRisk: number;
+  diseaseRisk: number;
+}
+
+export const SEASONS: Record<string, SeasonDef> = {
+  spring: { id: 'spring', name: '春', temp: [14, 22] },
+  summer: { id: 'summer', name: '夏', temp: [24, 32] },
+  autumn: { id: 'autumn', name: '秋', temp: [16, 25] },
+  winter: { id: 'winter', name: '冬', temp: [4, 12] },
 };
-let daySchedule: WeatherType[] = [
-  'night','night','night','night','night','night','cloudy','sunny','sunny','sunny','sunny','sunny',
-  'sunny','sunny','sunny','sunny','cloudy','cloudy','cloudy','sunny','cloudy','night','night','night',
-];
+
+export const WEATHER: Record<string, WeatherDef> = {
+  sunny: { id: 'sunny', name: '晴', tempModifier: 2, humidityModifier: 1.5, pestRisk: 0.0001, diseaseRisk: -0.0001 },
+  cloudy: { id: 'cloudy', name: '多云', tempModifier: 0, humidityModifier: 1.2, pestRisk: 0, diseaseRisk: 0 },
+  rain: { id: 'rain', name: '小雨', tempModifier: -1, humidityModifier: -1.5, pestRisk: -0.0002, diseaseRisk: 0.0002 },
+  storm: { id: 'storm', name: '暴雨', tempModifier: -3, humidityModifier: -2, pestRisk: 0.0003, diseaseRisk: 0.0005 },
+  drought: { id: 'drought', name: '干旱', tempModifier: 3, humidityModifier: 2, pestRisk: 0.0003, diseaseRisk: 0.0001 },
+};
+
+let current: WorldData = {
+  season: 'spring',
+  seasonName: '春',
+  weather: 'sunny',
+  weatherName: '晴',
+  temperature: 20,
+  dayIndex: 0,
+  minuteIndex: 0,
+  timestampMs: 0,
+};
 
 export function applyWeatherConfig(remote: any): void {
   if (!remote || typeof remote !== 'object') return;
-  const definitions = remote.definitions || {};
-  (Object.keys(WEATHER) as WeatherType[]).forEach(type => {
-    const row = definitions[type];
+  if (Array.isArray(remote.seasons)) {
+    remote.seasons.forEach((row: any) => {
+      if (!row || typeof row.id !== 'string') return;
+      SEASONS[row.id] = {
+        id: row.id,
+        name: String(row.name || SEASONS[row.id]?.name || row.id),
+        temp: Array.isArray(row.temp) ? [Number(row.temp[0]) || 0, Number(row.temp[1]) || 0] : [0, 0],
+      };
+    });
+  }
+  const definitions = remote.definitions || remote.weather?.definitions || {};
+  Object.keys(definitions).forEach(id => {
+    const row = definitions[id];
     if (!row) return;
-    WEATHER[type] = {
-      type,
-      name: String(row.name || WEATHER[type].name),
-      temp: Number(row.temp) || WEATHER[type].temp,
-      drainPerHour: Number(row.drainPerHour) || WEATHER[type].drainPerHour,
-      color: String(row.color || WEATHER[type].color),
+    WEATHER[id] = {
+      id,
+      name: String(row.name || WEATHER[id]?.name || id),
+      tempModifier: Number(row.tempModifier) || 0,
+      humidityModifier: Number(row.humidityModifier) || 0,
+      pestRisk: Number(row.pestRisk) || 0,
+      diseaseRisk: Number(row.diseaseRisk) || 0,
     };
   });
-  if (Array.isArray(remote.schedule) && remote.schedule.length === 24) {
-    daySchedule = remote.schedule.map((type: any) =>
-      typeof type === 'string' && type in WEATHER ? type as WeatherType : 'sunny',
-    );
-  }
 }
 
-export function weatherAtHour(hour: number): WeatherDef {
-  const normalized = ((Math.floor(hour) % 24) + 24) % 24;
-  return WEATHER[daySchedule[normalized]];
+/** 由 GameRoot 在每次快照到达时调用：只更新天气/季节/温度的显示值。 */
+export function applyWorldSnapshot(world: WorldData | undefined): void {
+  if (!world) return;
+  current = { ...world };
 }
 
-export function waterDrainPerHour(hour: number): number {
-  return weatherAtHour(hour).drainPerHour;
+export function currentWorld(): WorldData {
+  return current;
 }
 
-export function representativeWeather(now: number): WeatherDef {
-  return weatherAtHour(new Date(now).getHours());
+export function seasonName(id: string): string {
+  return SEASONS[id]?.name || id;
+}
+
+export function weatherName(id: string): string {
+  return WEATHER[id]?.name || id;
 }

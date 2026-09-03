@@ -4,20 +4,20 @@
  */
 
 /** 物品大类 */
-export type ItemCategory = 'seed' | 'fruit' | 'fert';
+export type ItemCategory = 'seed' | 'fruit' | 'fert' | 'medicine';
 
 /** 物品静态定义（来自配置，不可变） */
 export interface ItemDef {
-  id: string;        // 稳定 ID，如 "seed_0"
+  id: string;        // 稳定 ID，如 "seed_tomato"
   name: string;      // 显示名
-  icon: string;      // 图标资源名（Cocos 里指向 resources 下的 spriteFrame；网页用 emoji）
+  icon: string;      // 图标资源名（Cocos 里指向 resources 下的 spriteFrame）
   category: ItemCategory;
   value: number;     // 回收价（卖给商店时每个获得的金币）
 }
 
 /** 商店在售定义（在 ItemDef 基础上多一个购买价） */
 export interface ShopDef extends ItemDef {
-  price: number;     // 购买价（= value * 倍率）
+  price: number;     // 购买价
 }
 
 /** 背包里的一堆同类物品（运行时可变） */
@@ -32,4 +32,5 @@ export const CATEGORY_LABEL: Record<ItemCategory | 'all', string> = {
   seed: '种子',
   fruit: '果实',
   fert: '化肥',
+  medicine: '药品',
 };

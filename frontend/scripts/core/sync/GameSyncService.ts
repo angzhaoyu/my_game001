@@ -76,6 +76,13 @@ export class GameSyncService {
     return snapshot;
   }
 
+  /** 定期刷新：不下发目录（体积小），只更新权威快照。 */
+  async refresh(): Promise<GameSnapshot> {
+    const snapshot = await this.api.bootstrap(false);
+    this.accept(snapshot, true);
+    return snapshot;
+  }
+
   execute(type: GameCommandType, payload: Record<string, unknown>): Promise<GameSnapshot> {
     const session = SessionStore.get();
     if (!session || !this.current) {

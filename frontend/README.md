@@ -12,9 +12,12 @@ assets/
 ## 场景入口
 
 - `login` 场景 Canvas 挂 `LoginMain`；微信环境会自动调用 `wx.login`。
-- `farm` 场景 Canvas 挂 `GameRoot`；节点命名见 `scenes/farm.scene.md`。
-- 浇水、施肥、采摘、铲子的跟随图标与动画模板见 `scenes/tool-effects.setup.md`。
-- 请在 Cocos 编辑器用 `@property` 显式拖拽关键节点。代码中的按名查找只为兼容已有场景，不应成为新场景的主要绑定方式。
+- `farm` 场景 Canvas 挂 `GameRoot`；完整节点层级、土地预制体与各面板见 `scenes/farm.scene.md`。
+- 土地用**预制体**（建议 `assets/resources/farm/prefabs/LandPlot.prefab`，挂 `LandPlot.ts`）；
+  同一列有 6 张土块图（`locked_1a`…`locked_6a` 等），不要遗漏。
+- 所有节点、动画、进度条、面板都在 Cocos 里搭好，代码只负责切 `active` / 换图 / 填字 / 播 `Animation`。
+- 可微调的参数（缺肥缺水阈值、土块贴图路径模板、浇水次数上限等）都在组件属性上，
+  属性检查器里直接改即可，改代码不是必须。
 
 ## API 地址
 
@@ -53,18 +56,21 @@ assets/
 
 ## 配置与测试数据
 
-- `/game/bootstrap` 下发物品、商店、作物、土地和天气配置；
+- `/game/bootstrap` 下发物品、商店、作物、肥料、药品、土地、数值、季节与天气配置；
+- 季节 / 天气 / 温度由服务端随快照的 `world` 字段下发，客户端只显示（WeatherHud 三个 Label，不做动画）；
 - `farm/config/*` 是运行时镜像与展示算法，不再生成初始背包；
 - 客户端已移除初始背包生成函数；
 - 测试账号/初始物品运行 `backend` 的 `seed-demo` 创建。
 
 ## 检查
 
-不依赖 Cocos `cc` 的核心层可以独立类型检查：
-
 ```bash
 npm ci
-npm run typecheck:core
+npm run typecheck        # = typecheck:core + typecheck:farm
 ```
 
-Cocos UI 脚本应在真实 Creator 工程中编译并做真机测试。弱网至少覆盖：高延迟、请求超时、响应丢失、断网恢复、切后台、多设备同时操作、快速连点。
+- `typecheck:core`：不依赖 Cocos 的核心层；
+- `typecheck:farm`：包含 `scripts/farm/**` 的 UI 脚本，用仓库自带的最小 `cc` 类型声明
+  （`typings/cc.d.ts`，**仅供类型检查，构建时请排除 `typings/` 目录**）。
+
+Cocos UI 脚本仍应在真实 Creator 工程中编译并做真机测试。弱网至少覆盖：高延迟、请求超时、响应丢失、断网恢复、切后台、多设备同时操作、快速连点。

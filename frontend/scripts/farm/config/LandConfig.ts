@@ -2,50 +2,62 @@
  * 服务端规则的运行时镜像，只负责 UI 展示/动画预览。
  * 所有扣费、奖励和合法性仍以服务端 command 结果为准。
  */
+export interface LandUnlockRow {
+  index: number;
+  price: number;
+  minLevel: number;
+}
+
 export const LAND = {
   TOTAL_PLOTS: 24,
   PLOTS_PER_ROW: 6,
   ROWS: 4,
-  WATER_MAX: 100,
-  FERT_MAX: 100,
-  DRY_THRESHOLD: 30,
-  FERT_FERTILIZED: 50,
-  WATER_PER_USE: 20,
-  WATER_COOLDOWN_MS: 600,
-  DEVELOP_COST: 50,
-  PLANT_ENERGY: 2,
+  INITIAL_UNLOCKED: 1,
+  DAILY_PLANT_LIMIT: 3,
+  WATER_PER_USE: 5,
+  WATER_MAX_TIMES: 10,
+  MOISTURE_MAX: 100,
+  FERTILITY_MAX: 100,
+  /** 自然失水：湿度/小时（雨天修正为负 → 反而补水） */
+  MOISTURE_DRAIN_PER_HOUR: 6,
+  /** 缺肥提示阈值：低于目标 10 点显示（Cocos 端可用 SoilInfoPanel/fertilityAlertGap 覆盖） */
+  FERTILITY_ALERT_GAP: 10,
+  /** 缺水提示阈值：低于作物湿度下限 10 点显示 */
+  MOISTURE_ALERT_GAP: 10,
+  DAILY_NET_INCOME_CAP: 100,
 };
 
-export const FERT_AMOUNTS: Record<string, number> = {};
-export let LEVEL_PLOTS: number[] = Array.from({ length: 24 }, (_, index) => index + 1);
+export let LAND_UNLOCK: LandUnlockRow[] = [];
 export const LEVEL = { BASE_EXP: 100, EXP_GROWTH: 1.25, MAX_LEVEL: 24 };
 
-export function applyLandRules(rule: any, shopItems: any[] = []): void {
+export function applyLandRules(rule: any): void {
   if (!rule || typeof rule !== 'object') return;
   assignNumber('TOTAL_PLOTS', rule.totalPlots, 1, 100);
   assignNumber('PLOTS_PER_ROW', rule.plotsPerRow, 1, 20);
   assignNumber('ROWS', rule.rows, 1, 20);
-  assignNumber('WATER_MAX', rule.waterMax, 1, 10000);
-  assignNumber('FERT_MAX', rule.fertilizerMax, 1, 10000);
-  assignNumber('DRY_THRESHOLD', rule.dryThreshold, 0, LAND.WATER_MAX);
-  assignNumber('FERT_FERTILIZED', rule.fertilizedThreshold, 0, LAND.FERT_MAX);
-  assignNumber('WATER_PER_USE', rule.waterPerUse, 0, LAND.WATER_MAX);
-  assignNumber('WATER_COOLDOWN_MS', rule.waterCooldownMs, 0, 60000);
-  assignNumber('DEVELOP_COST', rule.developCost, 0, Number.MAX_SAFE_INTEGER);
-  if (Array.isArray(rule.levelPlots) && rule.levelPlots.length) {
-    LEVEL_PLOTS = rule.levelPlots.map((value: any) => Math.max(1, Math.floor(Number(value) || 1)));
-  }
+  assignNumber('INITIAL_UNLOCKED', rule.initialUnlocked, 0, LAND.TOTAL_PLOTS);
+  assignNumber('DAILY_PLANT_LIMIT', rule.dailyPlantLimit, 1, 99);
+  assignNumber('WATER_PER_USE', rule.waterPerUse, 0, 100);
+  assignNumber('WATER_MAX_TIMES', rule.waterMaxTimes, 1, 99);
+  assignNumber('FERTILITY_ALERT_GAP', rule.fertilityAlertGap, 0, 100);
+  assignNumber('MOISTURE_ALERT_GAP', rule.moistureAlertGap, 0, 100);
+  assignNumber('DAILY_NET_INCOME_CAP', rule.dailyNetIncomeCap, 0, 1e9);
+  assignNumber('MOISTURE_DRAIN_PER_HOUR', rule.moistureDrainPerHour, 0, 100);
   if (rule.level) {
     LEVEL.BASE_EXP = positive(rule.level.baseExp, LEVEL.BASE_EXP);
     LEVEL.EXP_GROWTH = positive(rule.level.expGrowth, LEVEL.EXP_GROWTH);
     LEVEL.MAX_LEVEL = positive(rule.level.maxLevel, LEVEL.MAX_LEVEL);
   }
-  Object.keys(FERT_AMOUNTS).forEach(key => delete FERT_AMOUNTS[key]);
-  (Array.isArray(shopItems) ? shopItems : []).forEach(item => {
-    if (item?.category === 'fert' && Number(item.effect) > 0) {
-      FERT_AMOUNTS[String(item.icon || item.id)] = Number(item.effect);
-    }
-  });
+  LAND_UNLOCK = (Array.isArray(rule.unlock) ? rule.unlock : [])
+    .map((row: any) => ({
+      index: Math.max(1, Math.floor(Number(row?.index) || 1)),
+      price: Math.max(0, Math.floor(Number(row?.price) || 0)),
+      minLevel: Math.max(1, Math.floor(Number(row?.minLevel) || 1)),
+    }));
+}
+
+export function unlockRow(plotId: number): LandUnlockRow | null {
+  return LAND_UNLOCK.find(row => row.index === plotId) || null;
 }
 
 function assignNumber(key: keyof typeof LAND, value: any, min: number, max: number): void {
@@ -56,19 +68,6 @@ function assignNumber(key: keyof typeof LAND, value: any, min: number, max: numb
 function positive(value: any, fallback: number): number {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : fallback;
-}
-
-export function fertAmountFor(icon: string): number {
-  return FERT_AMOUNTS[icon] || 0;
-}
-
-export function plotsUnlockedAtLevel(level: number): number {
-  const lv = Math.max(1, Math.floor(level));
-  return LEVEL_PLOTS[Math.min(lv, LEVEL_PLOTS.length) - 1] || 1;
-}
-
-export function newlyUnlockedAtLevel(level: number): number {
-  return Math.max(0, plotsUnlockedAtLevel(level) - plotsUnlockedAtLevel(level - 1));
 }
 
 export function expForNextLevel(level: number): number {

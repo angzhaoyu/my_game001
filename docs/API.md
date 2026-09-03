@@ -63,9 +63,28 @@ Base URL：`https://<domain>/api/v1`。请求/响应 JSON，写游戏接口需 `
 - `stateVersion`：并发版本；
 - `profile`：金币、等级、经验、体力；
 - `inventory`：服务端背包；
-- `plots`：24 块地；
+- `plots`：24 块地（字段见下方 `plots[]`）；
+- `world`：当前季节 / 天气 / 温度（服务端按现实时间确定性计算，客户端只显示）；
+- `daily`：当天经济统计（种子/肥料/药品成本、收入、播种与收获次数）；
 - `lastTick`：服务端最后结算时间；
-- `catalog`：有版本的物品/商店/作物/土地/天气配置。
+- `catalog`：有版本的物品/商店/作物/肥料/药品/土地/数值/季节/天气配置。
+
+查询参数 `catalog=0` 时不返回 `catalog`，用于客户端轮询刷新（`GET /game/bootstrap?catalog=0`）。
+
+#### `plots[]` 关键字段
+
+| 字段 | 说明 |
+|---|---|
+| `unlocked` / `unlock` | 是否解锁；未解锁时 `unlock={price,minLevel}` |
+| `fertility` / `soilHealth` / `moisture` | 肥力 / 土壤健康 / 湿度（0~100） |
+| `crop` / `stage` / `stageGrowth` / `plantAgeMinutes` / `mature` | 作物与成长值（每阶段 0~100） |
+| `quality` / `qualityGrade` / `qualityMultiplier` | 品质分数、档位与售价倍率 |
+| `matureYield` / `harvestQuantity` | 锁定的成熟产量 / 当前可收获数量 |
+| `pest` / `disease` | `{level,status,onsetAt}`，`status` 为 `NONE`/`ACTIVE` |
+| `activeFertilizers` / `activeMedicines` | 生效中的肥料与药品（含剩余分钟） |
+| `growthPerMinute` / `progress` | 仅供进度条预览的成长速度 |
+| `lowMoisture` / `lowFertility` | 缺水 / 缺肥提示（低于目标 10 点） |
+| `dailyPlantCount` / `dailyPlantLimit` | 今日播种次数 / 上限（3） |
 
 ### `POST /game/commands`
 
@@ -84,14 +103,22 @@ Base URL：`https://<domain>/api/v1`。请求/响应 JSON，写游戏接口需 `
 |---|---|---|
 | `buy_item` | `itemId`, `quantity?` | 在售、价格、金币 |
 | `sell_item` | `itemId`, `quantity?` | 目录、持有数量、回收价 |
-| `develop_plot` | `plotId` | 等级、状态、金币 |
-| `plant` | `plotId`, `cropId` | 解锁、空地、种子 |
-| `water` | `plotId` | 已开发、服务端冷却 |
-| `fertilize` | `plotId`, `itemId` | 已开发、化肥类型与数量 |
+| `unlock_land` | `plotId` | 等级门槛、金币、是否已解锁 |
+| `plant` | `plotId`, `cropId` | 已解锁、空地、种子、今日播种次数（≤3） |
+| `water` | `plotId`, `times?` | 已解锁；`times` 1~10，每次 +5 湿度 |
+| `fertilize` | `plotId`, `items[]`, `appendTime?` | 已解锁；`items=[{itemId,count}]`，`appendTime=true` 时同种肥料剩余时间累加 |
+| `apply_medicine` | `plotId`, `itemId` | 已解锁；药品类型与数量 |
 | `harvest` | `plotId` | 服务端结算后确实成熟 |
-| `shovel` | `plotId` | 已开发且存在作物；铲除后不返还种子 |
+| `shovel` | `plotId` | 已解锁且存在作物；铲除后不返还种子 |
 
 `quantity` 必须为 1-99。成功返回更新后的完整玩家快照（通常不重复 catalog）、`message`、`commandId`。
+
+#### 数值系统要点（v1.10）
+
+- 1 分钟 = 1 次服务端结算；良好条件约 5 分钟成熟，无最佳肥料约 6 分钟，最差不超过 120 分钟。
+- 每块土地每天最多播种 3 次；单块土地每日净收益硬上限 100 金币。
+- 收获按 `floor(产量 × 基础售价 × 品质倍率)` 直接结算金币（文档 §12/§13），果实物品保留在目录中供后续扩展。
+- 季节 / 天气 / 温度由服务端按「世界种子 + 现实时间」确定性计算，离线补算结果一致，不需要客户端参与。
 
 ## 健康检查
 

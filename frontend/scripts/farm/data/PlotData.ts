@@ -1,55 +1,134 @@
 /**
  * PlotData.ts —— 地块 / 作物「数据类型」（纯类型，不依赖引擎）
+ * 与后端 app/domain/serialization.py 的 RemotePlot 一一对应。
  */
 
-/** 土地显示态：a普通 b未开发 c施肥 d缺水 */
-export type LandState = 'a' | 'b' | 'c' | 'd';
+/** 土地显示态：normal 正常 / locked 未解锁 / dry 缺水 / lowfert 缺肥 */
+export type LandState = 'normal' | 'locked' | 'dry' | 'lowfert';
 
-/** 作物定义（来自 CropConfig） */
+/** 作物定义（来自服务端 catalog.crops） */
 export interface CropDef {
   id: string;
   name: string;
-  seedIcon: string;       // 刚种下时的贴图
-  fruitIcon: string;      // 成熟收获时的贴图
-  value: number;          // 收获金币价值
-  duration: number;       // 良好生长下可收获的小时数（默认 12）
-  optWater: [number, number];
-  optFert: [number, number];
-  stageIcons: string[];   // 生长阶段贴图（含种子态）
-  boostWater: number;
-  boostFert: number;
-  boostHours: number;     // 0/12 点奖励减的小时数
-  fertConsume: number;    // 每小时肥料消耗
-  penaltyDry: number;
-  penaltyOverWater: number;
-  penaltyLowFert: number;
-  penaltyOverFert: number;
+  kind: string;                    // 水果 / 作物 / 蔬菜
+  seasons: string[];               // 适宜季节 id
+  temp: [number, number];          // 适宜温度
+  humidity: [number, number];      // Hmin, Hmax
+  stageMinutes: [number, number, number];
+  fertConsumption: number;         // 肥力消耗/分钟
+  bestFertilizers: string[];       // (S1, S2, S3)
+  targetFertility: number;
+  basePrice: number;
+  seedPrice: number;
+  seedItemId: string;
+  fruitItemId: string;
+  seedIcon: string;
+  fruitIcon: string;
+  stageIcons: string[];            // 三个阶段贴图（作物 id + -01/-02/-03）
 }
 
-/** 单个地块的运行态 */
+export interface PlotEvent {
+  level: number;
+  status: 'NONE' | 'ACTIVE';
+  onsetAt: number | null;
+}
+
+export interface ActiveFertilizer {
+  id: string;
+  name: string;
+  itemId: string;
+  type: string;
+  remainingMinutes: number;
+  perMinute: number;
+  best: boolean;
+}
+
+export interface ActiveMedicine {
+  id: string;
+  name: string;
+  target: string;
+  remainingMinutes: number;
+  perMinute: boolean;
+}
+
+/** 单个地块的运行态（服务端快照投影） */
 export interface PlotData {
-  /** 地块编号 1..24 */
   id: number;
-  /** 是否已开发（true → 显示 a/c/d，可种植；false → 显示 b） */
-  developed: boolean;
-  /** 水分 0..100 */
-  water: number;
-  /** 肥料 0..100 */
-  fert: number;
-  /** 当前种植的作物 id，无则为 null */
+  unlocked: boolean;
+  fertility: number;
+  soilHealth: number;
+  moisture: number;
   crop: string | null;
-  /** 种植时间戳(ms) */
-  plantedAt: number;
-  /** 生长进度 0..1 */
-  progress: number;
-  /** 是否已可收获 */
-  harvestable: boolean;
-  /** 最近一次触发 0/12 点奖励的"小时键"，用于去重（YYYYMMDDHH） */
-  lastBoostKey: string;
+  stage: number;                   // 1~3，0 表示空地
+  stageGrowth: number;             // 0~100
+  plantAgeMinutes: number;
+  mature: boolean;
+  quality: number;
+  qualityGrade: string;
+  qualityMultiplier: number;
+  matureYield: number;
+  harvestQuantity: number;
+  pest: PlotEvent;
+  disease: PlotEvent;
+  activeFertilizers: ActiveFertilizer[];
+  activeMedicines: ActiveMedicine[];
+  bestFertilizerId: string;
+  growthPerMinute: number;         // 仅用于进度条预览
+  progress: number;                // 0~1 总进度
+  lowMoisture: boolean;
+  lowFertility: boolean;
+  dailyPlantCount: number;
+  dailyPlantLimit: number;
+  dailyNetIncome: number;
+  unlock: { price: number; minLevel: number } | null;
 }
 
-/** 农场整包存档 */
 export interface FarmSave {
   plots: PlotData[];
-  lastTick: number;       // 上次结算时间戳，用于离线补算
+  lastTick: number;
+}
+
+/** 全局环境 */
+export interface WorldData {
+  season: string;
+  seasonName: string;
+  weather: string;
+  weatherName: string;
+  temperature: number;
+  dayIndex: number;
+  minuteIndex: number;
+  timestampMs: number;
+}
+
+export function emptyPlot(id: number): PlotData {
+  return {
+    id,
+    unlocked: false,
+    fertility: 70,
+    soilHealth: 70,
+    moisture: 70,
+    crop: null,
+    stage: 0,
+    stageGrowth: 0,
+    plantAgeMinutes: 0,
+    mature: false,
+    quality: 60,
+    qualityGrade: '普通',
+    qualityMultiplier: 1,
+    matureYield: 0,
+    harvestQuantity: 0,
+    pest: { level: 0, status: 'NONE', onsetAt: null },
+    disease: { level: 0, status: 'NONE', onsetAt: null },
+    activeFertilizers: [],
+    activeMedicines: [],
+    bestFertilizerId: '',
+    growthPerMinute: 0,
+    progress: 0,
+    lowMoisture: false,
+    lowFertility: false,
+    dailyPlantCount: 0,
+    dailyPlantLimit: 3,
+    dailyNetIncome: 0,
+    unlock: null,
+  };
 }
