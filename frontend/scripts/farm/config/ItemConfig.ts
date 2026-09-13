@@ -1,3 +1,5 @@
+import type { RemoteFertilizer as FertilizerDef, RemoteMedicine as MedicineDef } from '../../core/network/Contracts';
+export type { RemoteFertilizer as FertilizerDef, RemoteMedicine as MedicineDef } from '../../core/network/Contracts';
 /**
  * 运行时物品目录。数据由 /api/v1/game/bootstrap 下发；本文件不再生成测试背包。
  */
@@ -41,4 +43,62 @@ export function applyItemCatalog(items: any[], shopItems: any[]): void {
 
 export function getItemDef(id: string): ItemDef | undefined {
   return ALL_ITEMS.find(item => item.id === id);
+}
+
+/** 保持目录对象引用不变：刷新时清除旧条目，重复 ID 以最后一条为准。 */
+function replaceCatalog<T>(target: Record<string, T>, rows: any[], parse: (row: any) => T): void {
+  Object.keys(target).forEach(key => delete target[key]);
+  (Array.isArray(rows) ? rows : [])
+    .filter(row => row && typeof row.id === 'string')
+    .forEach(row => { target[String(row.id)] = parse(row); });
+}
+
+function consumable(row: any, prefix: string) {
+  return {
+    id: String(row.id), name: String(row.name || row.id),
+    itemId: String(row.itemId || `${prefix}_${row.id}`),
+    duration: Number(row.duration) || 0, price: Number(row.price) || 0,
+  };
+}
+
+export const FERTILIZERS: Record<string, FertilizerDef> = {};
+export const MEDICINES: Record<string, MedicineDef> = {};
+
+export function applyFertilizerCatalog(rows: any[]): void {
+  replaceCatalog(FERTILIZERS, rows, row => ({
+    ...consumable(row, 'fert'),
+    type: row.type === 'organic' ? 'organic' : 'inorganic',
+    amount: Number(row.amount) || 0,
+    perMinute: Number(row.perMinute) || 0,
+    soilHealth: Number(row.soilHealth) || 0,
+  }));
+}
+
+export function applyMedicineCatalog(rows: any[]): void {
+  replaceCatalog(MEDICINES, rows, row => ({
+    ...consumable(row, 'med'),
+    target: row.target === 'disease' ? 'disease' : 'pest',
+    power: Number(row.power) || 0,
+    perMinute: !!row.perMinute,
+  }));
+}
+
+export function getFertilizerDef(id: string): FertilizerDef | undefined {
+  return FERTILIZERS[id];
+}
+
+export function getMedicineDef(id: string): MedicineDef | undefined {
+  return MEDICINES[id];
+}
+
+export function fertilizerItemId(id: string): string {
+  return FERTILIZERS[id]?.itemId || `fert_${id}`;
+}
+
+export function fertilizerName(id: string): string {
+  return FERTILIZERS[id]?.name || id;
+}
+
+export function medicineName(id: string): string {
+  return MEDICINES[id]?.name || id;
 }

@@ -72,7 +72,7 @@ export interface RemoteCrop {
   fruitItemId: string;
   seedIcon: string;
   fruitIcon: string;
-  stageIcons: string[];
+  stageIcons: string[]; // 作物 id + -01/-02/-03
 }
 
 export interface RemoteFertilizer {
@@ -217,7 +217,7 @@ export interface RemotePlot {
   soilHealth: number;
   moisture: number;
   crop: string | null;
-  stage: number;
+  stage: number; // 1~3，0 表示空地
   stageGrowth: number;
   plantAgeMinutes: number;
   mature: boolean;
@@ -231,8 +231,8 @@ export interface RemotePlot {
   activeFertilizers: RemoteActiveFertilizer[];
   activeMedicines: RemoteActiveMedicine[];
   bestFertilizerId: string;
-  growthPerMinute: number;
-  progress: number;
+  growthPerMinute: number; // 客户端仅用于进度条预览
+  progress: number; // 0~1 总进度
   lowMoisture: boolean;
   lowFertility: boolean;
   dailyPlantCount: number;

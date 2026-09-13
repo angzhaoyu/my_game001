@@ -1,3 +1,5 @@
+import type { RemoteCrop, RemotePlotEvent, RemoteActiveFertilizer, RemoteActiveMedicine, RemotePlot, RemoteWorld } from '../../core/network/Contracts';
+
 /**
  * PlotData.ts —— 地块 / 作物「数据类型」（纯类型，不依赖引擎）
  * 与后端 app/domain/serialization.py 的 RemotePlot 一一对应。
@@ -7,81 +9,16 @@
 export type LandState = 'normal' | 'locked' | 'dry' | 'lowfert';
 
 /** 作物定义（来自服务端 catalog.crops） */
-export interface CropDef {
-  id: string;
-  name: string;
-  kind: string;                    // 水果 / 作物 / 蔬菜
-  seasons: string[];               // 适宜季节 id
-  temp: [number, number];          // 适宜温度
-  humidity: [number, number];      // Hmin, Hmax
-  stageMinutes: [number, number, number];
-  fertConsumption: number;         // 肥力消耗/分钟
-  bestFertilizers: string[];       // (S1, S2, S3)
-  targetFertility: number;
-  basePrice: number;
-  seedPrice: number;
-  seedItemId: string;
-  fruitItemId: string;
-  seedIcon: string;
-  fruitIcon: string;
-  stageIcons: string[];            // 三个阶段贴图（作物 id + -01/-02/-03）
-}
+export type CropDef = RemoteCrop;
 
-export interface PlotEvent {
-  level: number;
-  status: 'NONE' | 'ACTIVE';
-  onsetAt: number | null;
-}
+export type PlotEvent = RemotePlotEvent;
 
-export interface ActiveFertilizer {
-  id: string;
-  name: string;
-  itemId: string;
-  type: string;
-  remainingMinutes: number;
-  perMinute: number;
-  best: boolean;
-}
+export type ActiveFertilizer = RemoteActiveFertilizer;
 
-export interface ActiveMedicine {
-  id: string;
-  name: string;
-  target: string;
-  remainingMinutes: number;
-  perMinute: boolean;
-}
+export type ActiveMedicine = RemoteActiveMedicine;
 
 /** 单个地块的运行态（服务端快照投影） */
-export interface PlotData {
-  id: number;
-  unlocked: boolean;
-  fertility: number;
-  soilHealth: number;
-  moisture: number;
-  crop: string | null;
-  stage: number;                   // 1~3，0 表示空地
-  stageGrowth: number;             // 0~100
-  plantAgeMinutes: number;
-  mature: boolean;
-  quality: number;
-  qualityGrade: string;
-  qualityMultiplier: number;
-  matureYield: number;
-  harvestQuantity: number;
-  pest: PlotEvent;
-  disease: PlotEvent;
-  activeFertilizers: ActiveFertilizer[];
-  activeMedicines: ActiveMedicine[];
-  bestFertilizerId: string;
-  growthPerMinute: number;         // 仅用于进度条预览
-  progress: number;                // 0~1 总进度
-  lowMoisture: boolean;
-  lowFertility: boolean;
-  dailyPlantCount: number;
-  dailyPlantLimit: number;
-  dailyNetIncome: number;
-  unlock: { price: number; minLevel: number } | null;
-}
+export type PlotData = RemotePlot;
 
 export interface FarmSave {
   plots: PlotData[];
@@ -89,16 +26,7 @@ export interface FarmSave {
 }
 
 /** 全局环境 */
-export interface WorldData {
-  season: string;
-  seasonName: string;
-  weather: string;
-  weatherName: string;
-  temperature: number;
-  dayIndex: number;
-  minuteIndex: number;
-  timestampMs: number;
-}
+export type WorldData = Omit<RemoteWorld, 'seed' | 'humidityModifier' | 'pestRisk' | 'diseaseRisk'>;
 
 export function emptyPlot(id: number): PlotData {
   return {

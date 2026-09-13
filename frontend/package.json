@@ -4,7 +4,8 @@
   "scripts": {
     "typecheck": "npm run typecheck:core && npm run typecheck:farm",
     "typecheck:core": "tsc -p tsconfig.core.json --noEmit",
-    "typecheck:farm": "tsc -p tsconfig.farm.json --noEmit"
+    "typecheck:farm": "tsc -p tsconfig.farm.json --noEmit",
+    "test": "node --test tests/*.test.cjs"
   },
   "devDependencies": {
     "typescript": "5.9.2"

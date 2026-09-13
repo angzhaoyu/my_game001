@@ -14,7 +14,7 @@ import {
 } from 'cc';
 import { LAND, unlockRow } from '../config/LandConfig';
 import { getCropDef } from '../config/CropConfig';
-import { getMedicineDef } from '../config/MedicineConfig';
+import { getMedicineDef } from '../config/ItemConfig';
 import { FarmModel } from '../data/FarmModel';
 import { InventoryModel } from '../data/InventoryModel';
 import { PlayerModel } from '../data/PlayerModel';

@@ -1,98 +1,88 @@
 /**
- * ui/Ui.ts —— UI 构建小工具（配合 resources/textures/ui 下的 HTML 同款图片）
+ * ui/Ui.ts —— 节点查找与贴图加载工具
  *
- * 约定：UI 图片放在 Cocos 项目的 assets/resources/textures/ui/ 下，
- * 与本仓库 farm/resources/textures/ui/ 一一对应（拷入项目时整体拷贝/合并该文件夹）。
- * slice = 九宫格边距（纹理像素）：传入后 Sprite 按九宫格拉伸，圆角与边框不变形。
+ * 场景节点与贴图都在 Cocos 里摆好；代码只负责「换图」，不负责创建节点。
+ * 这里做了一层缓存和路径兜底，避免每次刷新都重复 load。
  */
-import { Button, Color, Graphics, Label, Layers, Mask, Node, UITransform, Widget } from 'cc';
+import { Node, Sprite, SpriteFrame, resources } from 'cc';
 
-/** UI 图片目录（相对 resources 包） */
-export const UI_DIR = 'textures/ui';
+const cache = new Map<string, SpriteFrame | null>();
+const pending = new Map<string, Array<(frame: SpriteFrame | null) => void>>();
 
-/** 创建一个带 UITransform 的 UI 节点并挂到父节点 */
-export function ui(name: string, parent: Node, x: number, y: number, w: number, h: number): Node {
-    const n = new Node(name);
-    n.layer = Layers.Enum.UI_2D;
-    const ut = n.addComponent(UITransform);
-    ut.setContentSize(w, h);
-    parent.addChild(n);
-    n.setPosition(x, y);
-    return n;
+export function loadSpriteFrame(path: string, callback: (frame: SpriteFrame | null) => void): void {
+  if (!path) { callback(null); return; }
+  if (cache.has(path)) { callback(cache.get(path) ?? null); return; }
+  const queue = pending.get(path);
+  if (queue) { queue.push(callback); return; }
+  pending.set(path, [callback]);
+  resources.load(path, SpriteFrame, (error, frame) => {
+    const result = error || !frame ? null : frame;
+    cache.set(path, result);
+    const waiters = pending.get(path) || [];
+    pending.delete(path);
+    waiters.forEach(waiter => waiter(result));
+  });
 }
 
-/** 创建一个 Label（left / right 控制对齐，bold 加粗） */
-export function label(parent: Node, text: string, size: number, color: Color,
-                      x: number, y: number, w: number, h: number,
-                      left = false, right = false, bold = false): Label {
-    const n = ui('lb_' + text.replace(/\s/g, '').slice(0, 10), parent, x, y, w, h);
-    const lb = n.addComponent(Label);
-    lb.string = text;
-    lb.fontSize = size;
-    lb.lineHeight = Math.round(size * 1.25);
-    lb.color = color;
-    lb.isBold = bold;
-    lb.horizontalAlign = right ? Label.HorizontalAlign.RIGHT
-        : (left ? Label.HorizontalAlign.LEFT : Label.HorizontalAlign.CENTER);
-    lb.verticalAlign = Label.VerticalAlign.CENTER;
-    return lb;
+/** 依次尝试候选路径，第一个成功即应用到 sprite 上。 */
+export function applySprite(sprite: Sprite | null, paths: string[]): void {
+  if (!sprite) return;
+  const tryIndex = (index: number) => {
+    if (index >= paths.length) return;
+    loadSpriteFrame(paths[index], frame => {
+      if (!sprite.isValid) return;
+      if (frame) sprite.spriteFrame = frame;
+      else tryIndex(index + 1);
+    });
+  };
+  tryIndex(0);
 }
 
-/** 九宫格边距：一个数 = 四边相同；数组 = [左, 上, 右, 下]（纹理像素） */
-export type Slice = number | [number, number, number, number];
-
-/** 给节点设置一张 UI 图片（资源由编辑器在场景中直接配置，不再运行时动态加载） */
-export function setImg(node: Node, name: string, slice?: Slice): void {
-    // 运行时不再通过 resources.load 构建 UI 图片，
-    // 仅保留 API 兼容性，后续资源由编辑器预先挂载。
+/** 把路径模板里的 {col} / {state} 等占位符替换掉。 */
+export function fillPath(pattern: string, values: Record<string, string | number>): string {
+  return pattern.replace(/\{(\w+)\}/g, (_, key: string) =>
+    values[key] === undefined ? `{${key}}` : String(values[key]));
 }
 
-/** 图片按钮（九宫格/普通背景 + 缩放点击反馈） */
-export function imgButton(parent: Node, x: number, y: number, w: number, h: number,
-                          img: string, slice: Slice | undefined, cb: () => void, zoom = 0.92): Node {
-    const n = ui('btn_' + img.replace('.png', ''), parent, x, y, w, h);
-    const b = n.addComponent(Button);
-    b.transition = Button.Transition.SCALE;
-    b.zoomScale = zoom;
-    n.on(Button.EventType.CLICK, cb);
-    return n;
+/** 深度优先，包含根节点；用于场景装配与面板内查找。 */
+export function findNode(root: Node | null, name: string): Node | null {
+  if (!root) return null;
+  if (root.name === name) return root;
+  for (const child of root.children) {
+    const found = findNode(child, name);
+    if (found) return found;
+  }
+  return null;
 }
 
-/** 给节点加矩形遮罩（ScrollView 内容裁剪用） */
-export function addMaskRect(node: Node, w: number, h: number, radius = 0): void {
-    const g = node.addComponent(Graphics);
-    g.fillColor = new Color(255, 255, 255, 255);
-    g.roundRect(-w / 2, -h / 2, w, h, radius);
-    g.fill();
-    const m = node.addComponent(Mask);
-    m.type = Mask.Type.GRAPHICS_RECT;
+/** 广度优先，不包含根节点；候选名不改变节点遍历优先级。 */
+export function findNamedChild(root: Node, names: string[]): Node | null {
+  const queue = [...root.children];
+  for (let index = 0; index < queue.length; index++) {
+    const node = queue[index];
+    if (names.includes(node.name)) return node;
+    queue.push(...node.children);
+  }
+  return null;
 }
 
-/** 节点四边贴满父节点（全屏拉伸） */
-export function addStretch(node: Node, margin = 0): void {
-    const w = node.addComponent(Widget);
-    w.isAlignTop = w.isAlignBottom = w.isAlignLeft = w.isAlignRight = true;
-    w.top = w.bottom = w.left = w.right = margin;
-}
-
-/** 锚定到父节点的某条边/中心 */
-export function addAnchor(node: Node, o: {
-    top?: number; bottom?: number; left?: number; right?: number;
-    hCenter?: boolean; vCenter?: boolean;
-}): void {
-    const w = node.addComponent(Widget);
-    if (o.top !== undefined) { w.isAlignTop = true; w.top = o.top; }
-    if (o.bottom !== undefined) { w.isAlignBottom = true; w.bottom = o.bottom; }
-    if (o.left !== undefined) { w.isAlignLeft = true; w.left = o.left; }
-    if (o.right !== undefined) { w.isAlignRight = true; w.right = o.right; }
-    if (o.hCenter) w.isAlignHorizontalCenter = true;
-    if (o.vCenter) w.isAlignVerticalCenter = true;
-}
-
-/** 相对时间文案（与网页一致：刚刚 / N小时前 / N天前） */
-export function timeAgo(ts: number): string {
-    const h = Math.floor((Date.now() - ts) / 3600000);
-    if (h < 1) return '刚刚';
-    if (h < 24) return h + '小时前';
-    return Math.floor(h / 24) + '天前';
+/** 格子图标保留原路径顺序；仅背包格子额外回退到空格背景。 */
+export function loadItemIcon(sprite: Sprite, icon: string, cellFallback = false): void {
+  const paths = [
+    icon.startsWith('textures/') ? `${icon}/spriteFrame` : `textures/items/${icon}/spriteFrame`,
+    icon.startsWith('textures/') ? icon : `textures/items/${icon}`,
+    `textures/items/${icon}/spriteFrame`,
+    `textures/items/${icon}`,
+    ...['fruit', 'seed', 'fert'].map(prefix => `textures/items/${prefix}_${icon}/spriteFrame`),
+    ...(cellFallback ? ['textures/ui/cell/spriteFrame', 'textures/ui/cell'] : []),
+  ];
+  // 不使用缓存版 applySprite：保留格子加载失败后下次刷新可重试的行为。
+  const tryLoad = (index: number) => {
+    if (index >= paths.length) return;
+    resources.load(paths[index], SpriteFrame, (error, frame) => {
+      if (!error && frame && sprite) sprite.spriteFrame = frame;
+      else tryLoad(index + 1);
+    });
+  };
+  tryLoad(0);
 }

@@ -1,3 +1,4 @@
+import { findNode } from './Ui';
 /**
  * ui/BackpackPanel.ts —— 背包面板逻辑（绑定 farm.scene 中的 BackpackPanel 节点）
  */
@@ -46,10 +47,10 @@ export class BackpackPanel extends Component {
     });
 
     this.panelNode = this.node.getChildByName('Panel') || this.node;
-    const toolbar = this.findDescendant(this.panelNode, 'toolbar');
-    const header = this.findDescendant(this.panelNode, 'header');
-    const scroll = this.findDescendant(this.panelNode, 'ScrollView');
-    const footer = this.findDescendant(this.panelNode, 'Footer') || this.findDescendant(this.panelNode, 'footer');
+    const toolbar = findNode(this.panelNode, 'toolbar');
+    const header = findNode(this.panelNode, 'header');
+    const scroll = findNode(this.panelNode, 'ScrollView');
+    const footer = findNode(this.panelNode, 'Footer') || findNode(this.panelNode, 'footer');
 
     if (scroll) {
       this.scrollView = scroll.getComponent(ScrollView);
@@ -118,16 +119,6 @@ export class BackpackPanel extends Component {
 
     this.refreshTab();
     this.refreshSort();
-  }
-
-  private findDescendant(root: Node | null, name: string): Node | null {
-    if (!root) return null;
-    if (root.name === name) return root;
-    for (const child of root.children) {
-      const found = this.findDescendant(child, name);
-      if (found) return found;
-    }
-    return null;
   }
 
   open() {

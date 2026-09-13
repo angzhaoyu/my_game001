@@ -9,8 +9,7 @@
 import { _decorator, Button, Component, Label, Node, ScrollView, Sprite, UITransform } from 'cc';
 import { LAND } from '../config/LandConfig';
 import { getCropDef } from '../config/CropConfig';
-import { fertilizerName } from '../config/FertilizerConfig';
-import { medicineName } from '../config/MedicineConfig';
+import { fertilizerName, medicineName } from '../config/ItemConfig';
 import { FarmModel } from '../data/FarmModel';
 import type { PlotData } from '../data/PlotData';
 

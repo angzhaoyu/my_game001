@@ -1,12 +1,9 @@
+import type { RemoteLandUnlockRow } from '../../core/network/Contracts';
 /**
  * 服务端规则的运行时镜像，只负责 UI 展示/动画预览。
  * 所有扣费、奖励和合法性仍以服务端 command 结果为准。
  */
-export interface LandUnlockRow {
-  index: number;
-  price: number;
-  minLevel: number;
-}
+export type LandUnlockRow = RemoteLandUnlockRow;
 
 export const LAND = {
   TOTAL_PLOTS: 24,

@@ -14,8 +14,8 @@
 import { _decorator, Button, Component, Label, Layout, Node, ScrollView, Sprite } from 'cc';
 import { InventoryModel } from '../data/InventoryModel';
 import type { InventoryStack } from '../data/ItemData';
-import { FERTILIZERS, getFertilizerDef } from '../config/FertilizerConfig';
-import { applySprite } from './Assets';
+import { FERTILIZERS, getFertilizerDef } from '../config/ItemConfig';
+import { applySprite } from './Ui';
 
 const { ccclass, property } = _decorator;
 

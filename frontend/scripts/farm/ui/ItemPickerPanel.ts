@@ -5,7 +5,7 @@
  * 代码只负责填入图标/名称/数量并绑定点击，数量不足时用模板克隆补齐。
  */
 import { _decorator, Component, Label, Layout, Node, ScrollView, Sprite } from 'cc';
-import { applySprite } from './Assets';
+import { applySprite } from './Ui';
 
 const { ccclass, property } = _decorator;
 

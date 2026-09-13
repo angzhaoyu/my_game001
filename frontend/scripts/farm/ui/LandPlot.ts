@@ -14,7 +14,7 @@ import { LAND } from '../config/LandConfig';
 import { getCropDef } from '../config/CropConfig';
 import { FarmModel } from '../data/FarmModel';
 import type { LandState, PlotData } from '../data/PlotData';
-import { applySprite, fillPath } from './Assets';
+import { applySprite, fillPath } from './Ui';
 
 const { ccclass, property } = _decorator;
 

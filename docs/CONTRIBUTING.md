@@ -66,7 +66,7 @@ python -m pip install -r backend/requirements-dev.txt
 PYTHONPATH=backend python -m unittest discover -s backend/tests -v
 python -m ruff check backend
 python -m compileall -q backend/app backend/server.py backend/tests
-(cd frontend && npm ci && npm run typecheck)
+(cd frontend && npm ci && npm run typecheck && npm test)
 ```
 
 `PYTHONPATH=backend` 是 POSIX shell 写法；Windows 可先进入 `backend`，执行 `python -m unittest discover -s tests -v`。依赖安装只需首次或依赖更新时执行，Windows 一键启动脚本不会自动安装。

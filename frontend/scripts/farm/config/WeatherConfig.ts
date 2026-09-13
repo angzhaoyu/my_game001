@@ -1,3 +1,4 @@
+import type { RemoteSeason, RemoteWeatherDef } from '../../core/network/Contracts';
 /**
  * 季节 / 天气配置的运行时镜像。
  * 真实季节、天气、温度由服务端按现实时间确定性计算并通过快照的 `world` 下发，
@@ -5,20 +6,9 @@
  */
 import type { WorldData } from '../data/PlotData';
 
-export interface SeasonDef {
-  id: string;
-  name: string;
-  temp: [number, number];
-}
+export type SeasonDef = RemoteSeason;
 
-export interface WeatherDef {
-  id: string;
-  name: string;
-  tempModifier: number;
-  humidityModifier: number;
-  pestRisk: number;
-  diseaseRisk: number;
-}
+export type WeatherDef = RemoteWeatherDef;
 
 export const SEASONS: Record<string, SeasonDef> = {
   spring: { id: 'spring', name: '春', temp: [14, 22] },

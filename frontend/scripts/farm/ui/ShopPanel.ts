@@ -1,3 +1,4 @@
+import { findNode } from './Ui';
 /**
  * ui/ShopPanel.ts —— 商店面板逻辑（参考 BackpackPanel 实现）
  */
@@ -48,10 +49,10 @@ export class ShopPanel extends Component {
     });
 
     this.panelNode = this.node.getChildByName('Panel') || this.node;
-    const toolbar = this.findDescendant(this.panelNode, 'toolbar');
-    const header = this.findDescendant(this.panelNode, 'header');
-    const scroll = this.findDescendant(this.panelNode, 'ScrollView');
-    const footer = this.findDescendant(this.panelNode, 'Footer') || this.findDescendant(this.panelNode, 'footer');
+    const toolbar = findNode(this.panelNode, 'toolbar');
+    const header = findNode(this.panelNode, 'header');
+    const scroll = findNode(this.panelNode, 'ScrollView');
+    const footer = findNode(this.panelNode, 'Footer') || findNode(this.panelNode, 'footer');
 
     if (scroll) {
       this.scrollView = scroll.getComponent(ScrollView);
@@ -119,16 +120,6 @@ export class ShopPanel extends Component {
       const c = child.position;
       child.setPosition(c.x, c.y, 0);
     }
-  }
-
-  private findDescendant(root: Node | null, name: string): Node | null {
-    if (!root) return null;
-    if (root.name === name) return root;
-    for (const child of root.children) {
-      const found = this.findDescendant(child, name);
-      if (found) return found;
-    }
-    return null;
   }
 
   open() {

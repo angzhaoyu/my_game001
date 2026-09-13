@@ -1,10 +1,8 @@
 import type { RemoteCatalog } from '../network/Contracts';
 import { applyCropCatalog } from '../../farm/config/CropConfig';
-import { applyItemCatalog } from '../../farm/config/ItemConfig';
+import { applyItemCatalog, applyFertilizerCatalog, applyMedicineCatalog } from '../../farm/config/ItemConfig';
 import { applyLandRules } from '../../farm/config/LandConfig';
 import { applyWeatherConfig } from '../../farm/config/WeatherConfig';
-import { applyFertilizerCatalog } from '../../farm/config/FertilizerConfig';
-import { applyMedicineCatalog } from '../../farm/config/MedicineConfig';
 
 let appliedVersion = '';
 
