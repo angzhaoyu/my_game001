@@ -32,7 +32,7 @@
 
 所以取 **`minGrowthMultiplier = 6.0 / 120 = 0.05`**：5/6 分钟的正常体验完全不变，
 连续时间理论上限为 120 分钟；离散分钟结算实测为 121 分钟，**仍未严格满足 ≤ 120 分钟的指标**，需确认是否接受取整误差。
-如果你想严格保留 0.042，改 `backend/app/domain/catalog.py` 的 `GROWTH_RULES["minGrowthMultiplier"]` 即可，
+如果你想严格保留 0.042，改 `frontend/resources/datas/rules.csv` 的 `growth/minGrowthMultiplier` 即可，
 但那时最长成熟时间会变成约 143 分钟。
 
 ### 2. 收获直接结算金币，不产出果实物品
@@ -56,7 +56,7 @@
 | 13~18（`lands_3`） | 3 级 | |
 | 19~24（`lands_4`） | 4 级 | |
 
-改 `backend/app/domain/catalog.py` 的 `PLOTS_PER_LEVEL` 与 `LAND_UNLOCK` 即可调整。
+改 `frontend/resources/datas/land_unlock.csv` 的 `minLevel` 即可调整；布局另见 `rules.csv` 的 `land` 组。
 
 ## 实现约定
 

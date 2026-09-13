@@ -27,4 +27,4 @@ Cocos Creator 3.8.x + Flask + MySQL 农场项目，采用服务端权威命令�
 
 - [数值系统 v1.10](farm_game_value_system_final_v1.10.md)：保留正式设计；实现与设计的差异统一记录在数值落地记录中。
 - [原始交互需求](我想实现的.md)：保留需求来源；实际节点与接入方法以场景契约为准，不作为功能已全部完成的声明。
-- `frontend/Crop_Data.csv`、`frontend/Fertilizer_Data.csv`：策划参考表；运行时权威配置是 `backend/app/domain/catalog.py`，由 bootstrap 下发。
+- [CSV 配置表](frontend/resources/datas/README.md)：`frontend/resources/datas` 是唯一配置表来源，后端读取并通过 bootstrap 下发；旧 N/P/K 参考 CSV 已移除。

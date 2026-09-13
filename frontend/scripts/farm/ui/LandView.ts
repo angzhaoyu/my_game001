@@ -1,16 +1,6 @@
-/**
- * 农场土地视图：装配土地预制体、处理四种左栏工具，并播放场景中做好的动画。
- *
- * 约定（与需求一致）：
- *  - 土块、作物三阶段图、进度条、缺水/缺肥/病害/成熟动画全部是 Cocos 里的节点，
- *    代码只切换 active / 播放 Animation，不在运行时创建 UI 节点；
- *  - 工具光标使用场景里的 `ToolCursorLayer/ToolCursor`（缺失时才兜底创建一个）；
- *  - 浇水：先弹次数选择框 → 光标跟随 → 碰到土块后光标消失并唤醒土块的浇水动画；
- *  - 铲子 / 采摘：与浇水相同，但没有选择框；施肥统一走 FertilizePanel。
- */
 import {
-  _decorator, Animation, Component, EventMouse, EventTouch, Input, input, instantiate, Layers,
-  Node, Sprite, SpriteFrame, UIOpacity, UITransform, Vec3,
+  Animation, EventMouse, EventTouch, Input, input, Label,
+  Node, Sprite, SpriteFrame, UITransform, Vec3,
 } from 'cc';
 import { LAND, unlockRow } from '../config/LandConfig';
 import { getCropDef } from '../config/CropConfig';
@@ -21,35 +11,34 @@ import { PlayerModel } from '../data/PlayerModel';
 import type { PlotData } from '../data/PlotData';
 import type { GameActionHandler } from '../GameAction';
 import type { GameCommandType } from '../../core/network/Contracts';
-import { LandPlot } from './LandPlot';
+import { applySprite, fillPath, findNode, setActive } from './Ui';
 import type { SoilInfoPanel } from './SoilInfoPanel';
 import type { WaterPrompt } from './WaterPrompt';
 import type { FertilizePanel } from './FertilizePanel';
 import type { ItemPickerPanel, PickerRow } from './ItemPickerPanel';
 
-const { ccclass } = _decorator;
-
 export type ToolMode = 'none' | 'water' | 'fert' | 'harvest' | 'shovel';
 type ActiveTool = Exclude<ToolMode, 'none'>;
 
-const CURSOR_OPACITY = Math.round(255 * 0.7);
-/** 兜底：场景里没有对应动画节点时，从 ToolEffectLayer 模板实例化 */
-const EFFECT_TEMPLATE: Record<ActiveTool, string> = {
-  water: 'WaterEffectTemplate',
-  fert: 'FertilizerEffectTemplate',
-  harvest: 'HarvestEffectTemplate',
-  shovel: 'ShovelEffectTemplate',
-};
+const SOIL_SUFFIX = { normal: 'a', locked: 'b', lowfert: 'c', dry: 'd' };
+const EFFECT_NODE = { water: 'fx_watering', fert: 'fx_fertilize', harvest: 'fx_harvest', shovel: 'fx_shovel', unlock: 'fx_unlock' };
 const DOUBLE_CLICK_MS = 320;
 
 interface PlotView {
   id: number;
   node: Node;
-  plot: LandPlot;
+  nodes: Record<string, Node | null>;
+  soil: Sprite | null;
+  stage: Sprite | null;
+  fill: Sprite | null;
+  growthLabel: Label | null;
+  soilKey: string;
+  cropKey: string;
+  onTouch: (event: EventTouch) => void;
 }
 
-@ccclass('LandView')
-export class LandView extends Component {
+/** GameRoot 持有的普通控制器；lands 与所有地块均不挂脚本。 */
+export class LandView {
   farm!: FarmModel;
   player!: PlayerModel;
   inventory!: InventoryModel;
@@ -65,10 +54,14 @@ export class LandView extends Component {
   seedPicker: ItemPickerPanel | null = null;
   medicinePicker: ItemPickerPanel | null = null;
   openShop: () => void = () => {};
-  isShopOpen: () => boolean = () => false;
 
   toolCursorLayer: Node | null = null;
-  toolEffectLayer: Node | null = null;
+  soilPathPattern = 'farm/lands_{state}1/locked_{col}{state}/spriteFrame';
+  fertilityAlertGap = 0;
+  moistureAlertGap = 0;
+  growthFillMaxWidth = 0;
+  private disposed = false;
+  private effects = new Map<Node, number>();
 
   private plots: PlotView[] = [];
   private busyPlots = new Set<number>();
@@ -81,15 +74,19 @@ export class LandView extends Component {
   private lastClickAt = 0;
   private lastClickPlot = 0;
 
-  onLoad() {
-    this.node.on(Node.EventType.TOUCH_END, (event) => { event.propagationStopped = true; });
+  constructor(private node: Node) {
     this.buildPlotMap();
     input.on(Input.EventType.MOUSE_MOVE, this.onPointerMove, this);
     input.on(Input.EventType.TOUCH_START, this.onPointerMove, this);
     input.on(Input.EventType.TOUCH_MOVE, this.onPointerMove, this);
   }
 
-  onDestroy() {
+  destroy() {
+    this.disposed = true;
+    for (const plot of this.plots) plot.node.off(Node.EventType.TOUCH_END, plot.onTouch);
+    this.effects.forEach((_, node) => setActive(node, false));
+    this.effects.clear();
+    this.hideCursor();
     input.off(Input.EventType.MOUSE_MOVE, this.onPointerMove, this);
     input.off(Input.EventType.TOUCH_START, this.onPointerMove, this);
     input.off(Input.EventType.TOUCH_MOVE, this.onPointerMove, this);
@@ -99,18 +96,24 @@ export class LandView extends Component {
     if (!this.farm) return;
     this.farm.updateModel(this.now());
     this.render();
+    for (const [node, until] of this.effects) {
+      if (!node.isValid || this.now() >= until) {
+        setActive(node, false);
+        this.effects.delete(node);
+      }
+    }
   }
 
-  configureToolLayers(cursorLayer: Node | null, effectLayer: Node | null): void {
+  configureToolLayers(cursorLayer: Node | null): void {
     this.toolCursorLayer = cursorLayer;
-    this.toolEffectLayer = effectLayer;
     this.refreshToolCursor();
   }
 
   setTool(mode: ToolMode, leftBarIcon: SpriteFrame | null = null): void {
     this.tool = mode;
     this.suppliedCursorFrame = mode === 'none' ? null : leftBarIcon;
-    if (mode === 'none') this.pendingWaterTimes = 0;
+    if (mode !== 'water') { this.pendingWaterTimes = 0; this.waterPrompt?.close(); }
+    if (mode === 'water' && !this.pendingWaterTimes) this.openWaterPrompt();
     this.refreshToolCursor();
   }
 
@@ -121,11 +124,12 @@ export class LandView extends Component {
     for (const view of this.plots) {
       const plot = this.farm.getPlot(view.id);
       if (!plot) continue;
-      view.plot.render(plot, this.farm);
+      this.renderPlot(view, plot);
     }
     if (this.soilInfoPanel?.isOpen) {
       const plot = this.farm.getPlot(this.soilInfoPanel.currentPlotId);
-      if (plot) this.soilInfoPanel.render(plot, this.farm);
+      if (plot) this.soilInfoPanel.render(plot, this.farm,
+        this.farm.landState(plot, this.fertilityAlertGap, this.moistureAlertGap));
     }
   }
 
@@ -139,7 +143,7 @@ export class LandView extends Component {
   private moveToolCursor(x: number, y: number): void {
     this.hasPointerPosition = true;
     this.pointerWorldPosition.set(x, y, 0);
-    if (this.tool === 'none') return;
+    if (this.tool === 'none' || (this.tool === 'water' && !this.pendingWaterTimes)) return;
     const cursor = this.ensureCursorNode();
     if (!cursor) return;
     this.positionCursor(cursor);
@@ -148,17 +152,18 @@ export class LandView extends Component {
 
   private positionCursor(cursor: Node): void {
     const layer = cursor.parent;
-    const transform = layer?.getComponent(UITransform) || layer?.addComponent(UITransform);
+    const transform = layer?.getComponent(UITransform);
     if (transform) cursor.setPosition(transform.convertToNodeSpaceAR(this.pointerWorldPosition));
   }
 
   private refreshToolCursor(): void {
     const cursor = this.ensureCursorNode();
     if (!cursor) return;
-    setActive(cursor, this.tool !== 'none' && this.hasPointerPosition);
+    setActive(cursor, this.tool !== 'none' && this.hasPointerPosition && (this.tool !== 'water' || this.pendingWaterTimes > 0));
     if (this.tool === 'none') return;
     if (this.hasPointerPosition) this.positionCursor(cursor);
-    const sprite = cursor.getComponent(Sprite) || cursor.addComponent(Sprite);
+    const sprite = cursor.getComponent(Sprite);
+    if (!sprite) return;
     sprite.sizeMode = Sprite.SizeMode.CUSTOM;
     if (this.suppliedCursorFrame) sprite.spriteFrame = this.suppliedCursorFrame;
   }
@@ -169,33 +174,13 @@ export class LandView extends Component {
     this.toolCursorLayer = layer;
     if (this.cursorNode?.isValid) return this.cursorNode;
 
-    // 优先使用场景里摆好的 ToolCursor 节点
-    let cursor = layer.getChildByName('ToolCursor');
-    if (!cursor) {
-      cursor = new Node('ToolCursor');
-      cursor.layer = Layers.Enum.UI_2D;
-      cursor.addComponent(UITransform).setContentSize(72, 72);
-      cursor.addComponent(Sprite).sizeMode = Sprite.SizeMode.CUSTOM;
-      cursor.addComponent(UIOpacity).opacity = CURSOR_OPACITY;
-      layer.addChild(cursor);
-    }
-    cursor.active = false;
-    this.cursorNode = cursor;
-    return cursor;
+    this.cursorNode = layer.getChildByName('ToolCursor');
+    if (this.cursorNode) this.cursorNode.active = false;
+    return this.cursorNode;
   }
 
   private ensureLayer(name: string, configured: Node | null): Node | null {
-    if (configured?.isValid) return configured;
-    const parent = this.node.parent;
-    if (!parent) return null;
-    let layer = parent.getChildByName(name);
-    if (!layer) {
-      layer = new Node(name);
-      layer.layer = Layers.Enum.UI_2D;
-      layer.addComponent(UITransform);
-      parent.addChild(layer);
-    }
-    return layer;
+    return configured?.isValid ? configured : this.node.parent?.getChildByName(name) ?? null;
   }
 
   private hideCursor(): void {
@@ -213,7 +198,7 @@ export class LandView extends Component {
     const isDoubleClick = this.lastClickPlot === view.id && nowMs - this.lastClickAt <= DOUBLE_CLICK_MS;
     this.lastClickAt = nowMs;
     this.lastClickPlot = view.id;
-    if (isDoubleClick) {
+    if (isDoubleClick && this.tool === 'none') {
       this.lastClickAt = 0;
       this.openSoilInfo(plot);
       return;
@@ -277,7 +262,7 @@ export class LandView extends Component {
     }
     const result = await this.perform(plot.id, 'unlock_land', { plotId: plot.id });
     if (result.ok) {
-      this.plots.find(view => view.id === plot.id)?.plot.playEffect('unlock');
+      this.playEffectOnPlot(plot.id, 'unlock');
       this.onToast(result.message);
     }
   }
@@ -285,6 +270,7 @@ export class LandView extends Component {
   private openWaterPrompt(): void {
     if (!this.waterPrompt) { this.onToast('场景缺少 WaterPrompt 面板'); return; }
     this.waterPrompt.onConfirm = (times) => {
+      if (this.disposed || this.tool !== 'water') return;
       this.pendingWaterTimes = times;
       this.refreshToolCursor();
       this.onToast('请选择要浇水的土地');
@@ -401,6 +387,8 @@ export class LandView extends Component {
     if (!this.soilInfoPanel) { this.onToast('场景缺少 SoilInfoPanel 面板'); return; }
     this.soilInfoPanel.onRequestMedicine = (id) => this.openMedicinePicker(id);
     this.soilInfoPanel.open(plot, this.farm);
+    this.soilInfoPanel.render(plot, this.farm,
+      this.farm.landState(plot, this.fertilityAlertGap, this.moistureAlertGap));
   }
 
   private async perform(id: number, type: GameCommandType, payload: Record<string, unknown>) {
@@ -408,6 +396,7 @@ export class LandView extends Component {
     this.busyPlots.add(id);
     try {
       const result = await this.onAction(type, payload);
+      if (this.disposed) return { ok: false, message: '场景已关闭' };
       if (!result.ok) this.onToast(result.message, 2);
       return result;
     } finally {
@@ -417,35 +406,54 @@ export class LandView extends Component {
 
   // ---------- 动画 ----------
 
-  private playEffectOnPlot(plotId: number, tool: ActiveTool): void {
-    const view = this.plots.find(item => item.id === plotId);
-    if (!view) return;
-    const names: Record<ActiveTool, Parameters<LandPlot['playEffect']>[0]> = {
-      water: 'watering', fert: 'fertilize', harvest: 'harvest', shovel: 'shovel',
-    };
-    if (view.plot.playEffect(names[tool])) return;
-    this.playTemplateEffect(tool, view);
+  private playEffectOnPlot(plotId: number, tool: ActiveTool | 'unlock'): void {
+    const node = this.plots.find(view => view.id === plotId)?.nodes[EFFECT_NODE[tool]];
+    if (!node) return;
+    // fx 根节点只切显隐；子 Sprite 的动画由预制体自己的激活逻辑播放。
+    setActive(node, false);
+    setActive(node, true);
+    const animation = node.getComponent(Animation) || node.getComponentInChildren(Animation);
+    const clip = animation?.defaultClip || animation?.clips[0];
+    this.effects.set(node, this.now() + ((clip?.duration ?? 1) + 0.05) * 1000);
   }
 
-  /** 兜底：地块预制体里没有对应动画节点时使用 ToolEffectLayer 的模板 */
-  private playTemplateEffect(tool: ActiveTool, view: PlotView): void {
-    const layer = this.ensureLayer('ToolEffectLayer', this.toolEffectLayer);
-    if (!layer) return;
-    this.toolEffectLayer = layer;
-    const template = layer.getChildByName(EFFECT_TEMPLATE[tool]);
-    if (!template) return;
-    const effect = instantiate(template);
-    effect.name = `${EFFECT_TEMPLATE[tool]}_Playing`;
-    layer.addChild(effect);
-    effect.setWorldPosition(view.node.worldPosition);
-    effect.active = true;
-    const animation = effect.getComponent(Animation) || effect.getComponentInChildren(Animation);
-    const clip = animation?.defaultClip || animation?.clips[0] || null;
-    if (!animation || !clip) { effect.destroy(); return; }
-    if (!animation.defaultClip) animation.defaultClip = clip;
-    animation.play();
-    this.scheduleOnce(() => { if (effect.isValid) effect.destroy(); },
-      Math.max(0.05, clip.duration + 0.05));
+  private renderPlot(view: PlotView, plot: PlotData): void {
+    const state = this.farm.landState(plot, this.fertilityAlertGap, this.moistureAlertGap);
+    const col = (plot.id - 1) % LAND.PLOTS_PER_ROW + 1;
+    const path = fillPath(this.soilPathPattern, { state: SOIL_SUFFIX[state], col });
+    if (path !== view.soilKey) {
+      view.soilKey = path;
+      applySprite(view.soil, [path]);
+    }
+    const growing = plot.unlocked && !!plot.crop && !plot.mature;
+    for (const name of ['crop', 'growth']) setActive(view.nodes[name], growing);
+    setActive(view.nodes.mature, plot.unlocked && plot.mature);
+    setActive(view.nodes.pest, plot.unlocked && (plot.pest.status === 'ACTIVE' || plot.disease.status === 'ACTIVE'));
+    setActive(view.nodes.fx_pest, plot.unlocked && plot.pest.status === 'ACTIVE');
+    setActive(view.nodes.fx_disease, plot.unlocked && plot.disease.status === 'ACTIVE');
+    const crop = getCropDef(plot.crop);
+    const stage = this.farm.growthStage(plot);
+    const cropKey = `${plot.crop}|${stage}|${crop?.stageIcons[stage] ?? ''}`;
+    if (cropKey !== view.cropKey) {
+      view.cropKey = cropKey;
+      if (crop && stage >= 0) applySprite(view.stage, [
+        `farm/crop/${crop.stageIcons[stage]}/spriteFrame`,
+        `textures/items/${crop.stageIcons[stage]}/spriteFrame`,
+      ]);
+    }
+    if (view.fill) {
+      const ratio = this.farm.stageProgress(plot);
+      if (this.growthFillMaxWidth > 0) {
+        const transform = view.fill.getComponent(UITransform);
+        if (transform) transform.setContentSize(this.growthFillMaxWidth * ratio, transform.height);
+      } else view.fill.fillRange = ratio;
+    }
+    if (view.growthLabel) view.growthLabel.string = plot.mature ? '可采摘' : `${Math.floor(plot.stageGrowth)}`;
+    const limit = plot.dailyPlantLimit || LAND.DAILY_PLANT_LIMIT;
+    const label = view.nodes.plantLimit?.getComponent(Label);
+    if (label) label.string = `今日播种 ${plot.dailyPlantCount}/${limit}`;
+    const lockPrice = view.nodes.lockPrice?.getComponent(Label);
+    if (lockPrice) lockPrice.string = plot.unlocked ? '' : `${plot.unlock?.price ?? 0} 金币 / ${plot.unlock?.minLevel ?? 1} 级`;
   }
 
   // ---------- 场景装配 ----------
@@ -462,24 +470,24 @@ export class LandView extends Component {
           || rowNode.getChildByName(`land_${id}`);
         if (!plotNode) continue;
 
-        const component = plotNode.getComponent(LandPlot) || plotNode.addComponent(LandPlot);
-        component.plotId = id;
-        component.column = col;
-
-        const plotId = id;
-        const view: PlotView = { id, node: plotNode, plot: component };
-        plotNode.off(Node.EventType.TOUCH_END);
-        plotNode.on(Node.EventType.TOUCH_END, (event) => {
-          event.propagationStopped = true;
-          const target = this.plots.find(item => item.id === plotId);
-          if (target) this.onPlotTouch(target);
-        });
+        const nodes: Record<string, Node | null> = {};
+        for (const name of ['soil', 'crop', 'stage', 'growth', 'lb_growth', 'ToolEffect', 'pest',
+          'fx_pest', 'fx_disease', 'mature', 'lockPrice', 'plantLimit', ...Object.values(EFFECT_NODE)]) {
+          nodes[name] = findNode(plotNode, name);
+        }
+        setActive(nodes.ToolEffect, true);
+        for (const name of Object.values(EFFECT_NODE)) setActive(nodes[name], false);
+        const view: PlotView = {
+          id, node: plotNode, nodes, soilKey: '', cropKey: '',
+          soil: nodes.soil?.getComponent(Sprite) ?? null,
+          stage: nodes.stage?.getComponent(Sprite) ?? null,
+          fill: nodes.growth?.getChildByName('fill')?.getComponent(Sprite) ?? null,
+          growthLabel: nodes.lb_growth?.getComponent(Label) ?? null,
+          onTouch: event => { event.propagationStopped = true; this.onPlotTouch(view); },
+        };
+        plotNode.on(Node.EventType.TOUCH_END, view.onTouch);
         this.plots.push(view);
       }
     }
   }
-}
-
-function setActive(node: Node, active: boolean): void {
-  if (node.isValid && node.active !== active) node.active = active;
 }

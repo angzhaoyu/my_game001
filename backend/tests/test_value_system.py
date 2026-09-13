@@ -352,3 +352,44 @@ class ValueSystemTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CsvCatalogTest(unittest.TestCase):
+    def test_catalog_tables_and_requested_alert_threshold(self):
+        from app.domain import catalog as c
+        self.assertEqual((len(c.CROPS), len(c.FERTILIZERS), len(c.MEDICINES), len(c.LAND_UNLOCK)), (24, 12, 6, 24))
+        self.assertEqual(c.LAND_RULES["fertilityAlertGap"], 15)
+        self.assertEqual(c.LAND_RULES["moistureAlertGap"], 15)
+        self.assertEqual(c.CROPS["longan"].stage_minutes, (1, 2, 2))
+        self.assertEqual(c.MEDICINES["pest_repellent"].per_minute, True)
+        self.assertEqual(c.initial_inventory(), {"seed_shallot": 3, "seed_lettuce": 3, "fert_compost": 2})
+        self.assertTrue(c.CATALOG_VERSION.startswith("v1.10.csv."))
+        for age in (0, 4.9, 5, 9.9, 10, 29.9, 30, 59.9, 60, 89.9, 90, 120):
+            old = (10 + 2 * age if age < 5 else 20 + 4 * (age - 5) if age < 10 else
+                   40 + 1.25 * (age - 10) if age < 30 else 65 + .67 * (age - 30) if age < 60 else
+                   85 + .5 * (age - 60) if age < 90 else 100)
+            self.assertAlmostEqual(c.event_level_for_age(age), min(100, old))
+
+    def test_csv_loader_rejects_duplicates_malformed_rows_and_types(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+        from app.domain import catalog as c
+        with TemporaryDirectory() as directory, patch.object(c, "DATA_DIR", Path(directory)):
+            file = Path(directory) / "sample.csv"
+            for text in ("id,name\na,A\na,B\n", "id,name\na,A,extra\n", "id,value\na,not-json\n", "id,name\n"):
+                file.write_text(text, encoding="utf-8-sig")
+                with self.assertRaises(ValueError):
+                    c.table("sample")
+            file.write_text('id,name,item_id,target,power,per_minute,duration_minutes,price\na,A,med_a,pest,4,"""false""",7,3\n', encoding="utf-8-sig")
+            with self.assertRaisesRegex(ValueError, "invalid columns/types"):
+                c.definitions("sample", c.MedicineDef)
+
+    def test_invalid_cross_table_reference_is_rejected(self):
+        from dataclasses import replace
+        from unittest.mock import patch
+        from app.domain import catalog as c
+        crop = replace(c.CROPS["shallot"], best_fertilizers=("missing",) * 3)
+        with patch.dict(c.CROPS, {"shallot": crop}):
+            with self.assertRaisesRegex(ValueError, "invalid crop"):
+                c.validate_catalog()

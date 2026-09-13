@@ -1,0 +1,36 @@
+# 共享 CSV 配置表
+
+这些表替代代码里的数值数组，以及旧的 N/P/K 参考 CSV。**服务端实际读取本目录**，校验后生成物品目录、游戏规则和 bootstrap；客户端继续使用服务端下发配置，不在本地决定奖励。
+
+| 文件 | 内容 |
+|---|---|
+| `crops.csv` | 24 种作物：季节、温湿度、三阶段分钟、最佳肥料、肥力、价格、图片名 |
+| `fertilizers.csv` | 12 种肥料：无机即时肥力/有机总肥力、分钟、健康、价格 |
+| `medicines.csv` | 6 种药品：目标、强度、是否每分钟、时长、价格 |
+| `seasons.csv` | 四季中文名与基础温度范围 |
+| `weather.csv` | 天气名称、温湿度和病虫风险修正 |
+| `weather_weights.csv` | 每个季节的天气抽样权重（顺序参与确定性重放） |
+| `land_unlock.csv` | 每块土地的价格与等级要求 |
+| `quality_grades.csv` | 品质等级区间与售价倍率 |
+| `event_levels.csv` | 病虫事件年龄区间、起始等级、每分钟增量 |
+| `event_growth.csv` | 害虫/病害等级对应成长倍率 |
+| `rules.csv` | 全局成长/土地/等级规则、初始背包、大区、寒冷天气别名 |
+
+## 编辑约定
+
+- UTF-8（可带 BOM），逗号分隔，首行英文列名不能删除/改名。时间统一为**现实分钟**。
+- 文本列直接填文字；数值填 `15`、`0.05`，布尔填 `true/false`；数组单元格使用 JSON，例如 `[1, 2, 2]` 或 `["spring", "summer"]`。Excel/WPS 保存时会处理 CSV 引号转义，不要手动删掉文件里的双引号。
+- `rules.csv` 按 `group,key,value` 定位，value 一律为 JSON（数字、对象、数组；字符串需要 JSON 双引号）。缺水/缺肥阈值为 `land,moistureAlertGap,15` 与 `land,fertilityAlertGap,15`。
+- `crops.csv` 的 `temp/humidity` 为 `[下限,上限]`，`stage_minutes/best_fertilizers/stage_icons` 各含 3 项。`target_fertility` 为目标肥力，不再使用 N/P/K。
+- 种子/果实/肥料/药品的物品与商店条目由上述表自动派生，不再维护第二份重复的物品表。肥料/药品回收价仍为原规则 `max(1, price // 2)`。
+- 不随意修改已有 ID、天气权重行内顺序、事件等级区间顺序或已上线的历史规则；它们涉及存档引用与离线重放，需要评估版本兼容性。
+- 配置版本由全部 CSV 内容的哈希生成；改表后**重启服务端**（Docker 需重新构建镜像），新 bootstrap 会下发新版本。不会把客户端上传的 CSV 当成服务端配置。
+- 表格缺失、格式错误、重复 ID、作物/肥料/季节引用错误等会阻止服务端启动；异常包含表名/行号或 ID，不静默用旧配置覆盖。
+
+## 开发与部署
+
+本地无需复制两份表，后端按仓库路径读取这里。Docker 会将本目录 CSV 复制到 `/app/datas`，设置 `GAME_DATA_DIR=/app/datas`。独立后端部署也必须携带这组表，并将 `GAME_DATA_DIR` 指向该只读目录。
+
+放入 Cocos `assets/resources/datas` 可方便策划统一管理，但运行客户端不重复解析它们；显示仍使用 bootstrap 与缓存快照。不要在这里放密钥、账号密码或玩家数据。
+
+检查命令统一见 [开发协作指南](../../../docs/CONTRIBUTING.md#本地检查)。

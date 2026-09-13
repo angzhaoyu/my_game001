@@ -17,10 +17,10 @@ export const LAND = {
   FERTILITY_MAX: 100,
   /** 自然失水：湿度/小时（雨天修正为负 → 反而补水） */
   MOISTURE_DRAIN_PER_HOUR: 6,
-  /** 缺肥提示阈值：低于目标 10 点显示（Cocos 端可用 SoilInfoPanel/fertilityAlertGap 覆盖） */
-  FERTILITY_ALERT_GAP: 10,
-  /** 缺水提示阈值：低于作物湿度下限 10 点显示 */
-  MOISTURE_ALERT_GAP: 10,
+  /** 缺肥提示阈值：低于目标 15 点显示（Cocos 端可用 GameRoot/fertilityAlertGap 覆盖） */
+  FERTILITY_ALERT_GAP: 15,
+  /** 缺水提示阈值：低于作物湿度下限 15 点显示 */
+  MOISTURE_ALERT_GAP: 15,
   DAILY_NET_INCOME_CAP: 100,
 };
 
@@ -75,4 +75,10 @@ export function expTotalForLevel(level: number): number {
   let sum = 0;
   for (let current = 1; current < level; current++) sum += expForNextLevel(current);
   return sum;
+}
+
+/** 仅用于未成熟作物的预计产量，真实收获仍以后端为准。 */
+export const GROWTH_DISPLAY = { BASE_YIELD: 10 };
+export function applyGrowthDisplay(rule: { baseYield: number } | undefined): void {
+  if (rule && Number.isFinite(rule.baseYield)) GROWTH_DISPLAY.BASE_YIELD = Math.max(0, rule.baseYield);
 }

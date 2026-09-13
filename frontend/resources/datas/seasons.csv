@@ -1,0 +1,5 @@
+﻿id,name,temp
+spring,春,"[14, 22]"
+summer,夏,"[24, 32]"
+autumn,秋,"[16, 25]"
+winter,冬,"[4, 12]"

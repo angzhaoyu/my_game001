@@ -54,6 +54,12 @@ export class GameRoot extends Component {
   @property({ type: Node }) public seedPanelNode: Node | null = null;
   @property({ type: Node }) public medicinePanelNode: Node | null = null;
 
+  @property({ tooltip: '土壤图路径：{state}=a/b/c/d，{col}=1..6' })
+  public soilPathPattern = 'farm/lands_{state}1/locked_{col}{state}/spriteFrame';
+  @property({ tooltip: '缺肥差值；0 跟随表格（默认 15）' }) public fertilityAlertGap = 0;
+  @property({ tooltip: '缺水差值；0 跟随表格（默认 15）' }) public moistureAlertGap = 0;
+  @property({ tooltip: '成长条最大宽度；0 使用 Sprite fillRange' }) public growthFillMaxWidth = 0;
+
   private player = new PlayerModel(0);
   private inventory = new InventoryModel();
   private farm = new FarmModel();
@@ -106,7 +112,10 @@ export class GameRoot extends Component {
     this.schedule(this.poll, POLL_INTERVAL_SECONDS);
   }
 
+  update() { this.landView?.update(); }
+
   onDestroy() {
+    this.landView?.destroy();
     this.unsubscribeSnapshot?.();
     cocosGame.off(Game.EVENT_SHOW, this.onAppShow, this);
   }
@@ -141,10 +150,6 @@ export class GameRoot extends Component {
     this.refreshHud();
     this.landView?.render();
     this.weatherHud?.refresh();
-    if (this.soilInfo?.isOpen) {
-      const plot = this.farm.getPlot(this.soilInfo.currentPlotId);
-      if (plot) this.soilInfo.render(plot, this.farm);
-    }
     this.fertilizePanel?.refresh();
     if (this.backpack?.isOpen) this.backpack.render();
     if (this.shop?.isOpen) this.shop.render();
@@ -226,7 +231,11 @@ export class GameRoot extends Component {
     // ---- 土地 ----
     const lands = this.landsNode || findNode(root, 'lands');
     if (lands) {
-      this.landView = lands.getComponent(LandView) || lands.addComponent(LandView);
+      this.landView = new LandView(lands);
+      this.landView.soilPathPattern = this.soilPathPattern;
+      this.landView.fertilityAlertGap = this.fertilityAlertGap;
+      this.landView.moistureAlertGap = this.moistureAlertGap;
+      this.landView.growthFillMaxWidth = this.growthFillMaxWidth;
       this.landView.farm = this.farm;
       this.landView.player = this.player;
       this.landView.inventory = this.inventory;
@@ -235,7 +244,6 @@ export class GameRoot extends Component {
       this.landView.now = () => gameSync.serverNow();
       this.landView.configureToolLayers(
         findNode(root, 'ToolCursorLayer'),
-        findNode(root, 'ToolEffectLayer'),
       );
       // 面板注入（全部是 Cocos 场景节点上的组件）
       this.soilInfo = componentOf(this.soilInfoNode || findNode(root, 'SoilInfoPanel'), SoilInfoPanel);
@@ -251,7 +259,6 @@ export class GameRoot extends Component {
       this.landView.seedPicker = this.seedPanel;
       this.landView.medicinePicker = this.medicinePanel;
       this.landView.openShop = () => this.openShop();
-      this.landView.isShopOpen = () => !!this.shop?.isOpen;
     }
 
     const weatherNode = this.weatherHudNode || findNode(root, 'WeatherHud');

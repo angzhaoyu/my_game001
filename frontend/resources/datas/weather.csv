@@ -1,0 +1,6 @@
+﻿id,name,tempModifier,humidityModifier,pestRisk,diseaseRisk
+sunny,晴,2.0,1.5,0.0001,-0.0001
+cloudy,多云,0.0,1.2,0.0,0.0
+rain,小雨,-1.0,-1.5,-0.0002,0.0002
+storm,暴雨,-3.0,-2.0,0.0003,0.0005
+drought,干旱,3.0,2.0,0.0003,0.0001

@@ -5,7 +5,7 @@
 | 角色 | 主目录 | 合作点 |
 |---|---|---|
 | 后端 | `backend/app/api,services,repositories` | API 契约、事务、监控 |
-| 游戏逻辑/策划 | `backend/app/domain/catalog.py,game.py` | 数值版本、规则测试 |
+| 游戏逻辑/策划 | `frontend/resources/datas`、`backend/app/domain/game.py` | 数值版本、规则测试 |
 | 客户端 | `frontend/scripts/core,farm` | 同步状态机、Cocos 表现 |
 | UI/美术 | `frontend/scenes,resources` + 真实 Cocos assets | 节点/资源契约 |
 | DBA/运维 | `backend/migrations,Dockerfile,compose` | 迁移、备份、部署 |
@@ -16,7 +16,7 @@
 ## 改动规则
 
 1. **接口先行**：先更新 `docs/API.md` 和 TypeScript contract，再分别实现服务端/客户端。
-2. **配置有版本**：改商店/作物规则必须提升 `CATALOG_VERSION`，补领域测试，说明经济影响。
+2. **配置有版本**：改 `frontend/resources/datas/*.csv` 后配置版本由内容哈希自动更新，需重启服务端、补领域测试并说明经济影响。
 3. **迁移只追加**：创建新的 `NNN_description.sql`；已在线执行的迁移禁止修改。
 4. **不跨层**：UI 不直接调用 `wx.request`；route 不写 SQL；repository 不决定价格；客户端不生成测试资产。
 5. **幂等优先**：新增有副作用 API 前先设计幂等键、事务边界、重试语义。

@@ -69,3 +69,5 @@ gunicorn --bind 0.0.0.0:8000 --workers 2 --threads 4 --timeout 30 'app:create_ap
 ```
 
 生产配置和安全要求统一见 [微信上线清单](../docs/WECHAT_RELEASE.md)。
+
+配置表统一读取 `frontend/resources/datas`（默认按代码所在路径定位，与启动目录无关），可用 `GAME_DATA_DIR` 指向受信任的部署目录。Docker 构建上下文为仓库根目录，镜像只复制后端运行文件和 CSV；单独构建请在根目录执行 `docker build -f backend/Dockerfile .`。改表后重启服务端，见 [CSV 配置说明](../frontend/resources/datas/README.md)。

@@ -7,3 +7,6 @@
 *.md text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+
+# 共享表格跨平台保持一致，避免换行差异改变配置哈希。
+*.csv text eol=lf

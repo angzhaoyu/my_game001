@@ -1,0 +1,13 @@
+﻿id,name,item_id,type,instant_fertility,total_fertility,duration_minutes,soil_health,price
+urea,尿素,fert_urea,inorganic,5.0,0.0,30.0,0.0,1
+nitrogen_compound,氮磷复合肥,fert_nitrogen_compound,inorganic,6.0,0.0,30.0,0.0,2
+super_phosphate,过磷酸钙,fert_super_phosphate,inorganic,5.0,0.0,30.0,0.0,1
+phosphate_fertilizer,高磷肥,fert_phosphate_fertilizer,inorganic,6.0,0.0,30.0,0.0,2
+potassium_sulfate,硫酸钾,fert_potassium_sulfate,inorganic,6.0,0.0,30.0,0.0,2
+potassium_compound,高钾复合肥,fert_potassium_compound,inorganic,8.0,0.0,30.0,0.0,3
+npk_15,复合肥15-15-15,fert_npk_15,inorganic,6.0,0.0,30.0,0.0,2
+water_soluble,水溶肥,fert_water_soluble,inorganic,7.0,0.0,30.0,0.0,2
+calcium_fertilizer,硝酸钙,fert_calcium_fertilizer,inorganic,4.0,0.0,30.0,0.0,1
+compost,堆肥,fert_compost,organic,0.0,5.0,5.0,1.0,1
+chicken_manure,鸡粪肥,fert_chicken_manure,organic,0.0,6.0,4.0,1.0,2
+slow_release,缓释有机肥,fert_slow_release,organic,0.0,8.0,8.0,2.0,3

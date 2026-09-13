@@ -6,15 +6,18 @@ const vm = require('node:vm');
 const ts = require('typescript');
 
 // Test pure helpers without a Creator installation; typecheck separately checks engine signatures.
-function load(relative, cc = {}) {
+function load(relative, cc = {}, cache = new Map()) {
   const filename = path.resolve(__dirname, '../scripts', relative);
+  if (cache.has(filename)) return cache.get(filename);
   const source = ts.transpileModule(readFileSync(filename, 'utf8'), {
-    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
+    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, experimentalDecorators: true },
   }).outputText;
   const exports = {};
+  cache.set(filename, exports);
   vm.runInThisContext(`(function(exports, require) {${source}\n})`, { filename })(exports, id => {
-    assert.equal(id, 'cc');
-    return cc;
+    if (id === 'cc') return cc;
+    assert.ok(id.startsWith('.'));
+    return load(path.relative(path.resolve(__dirname, '../scripts'), path.resolve(path.dirname(filename), id + '.ts')), cc, cache);
   });
   return exports;
 }
@@ -117,4 +120,141 @@ test('sprite helpers retain request coalescing, cache, validity guard and path s
   assert.equal(invalid.spriteFrame, undefined);
   assert.equal(requests.length, 2);
   assert.equal(ui.fillPath('{col}/{state}/{unknown}', { col: 0, state: 'a' }), '0/a/{unknown}');
+});
+
+function farmFixture() {
+  class Sprite { constructor(node) { this.node = node; this.isValid = true; } }
+  class Label { string = ''; }
+  class Animation {}
+  class Vec3 { set() {} }
+  class Node {
+    static EventType = { TOUCH_END: 'touch-end' };
+    constructor(name, ...children) {
+      this.name = name; this.children = children; this.isValid = true; this.active = true;
+      this.components = new Map(); this.events = new Map();
+      for (const child of children) child.parent = this;
+    }
+    getChildByName(name) { return this.children.find(child => child.name === name) || null; }
+    getComponent(type) { return this.components.get(type) || null; }
+    getComponentInChildren(type) {
+      for (const child of this.children) {
+        const found = child.getComponent(type) || child.getComponentInChildren(type);
+        if (found) return found;
+      }
+      return null;
+    }
+    addComponent() { throw Error('lands and plot prefabs must not receive components'); }
+    on(type, cb) { this.events.set(type, [...this.events.get(type) || [], cb]); }
+    off(type, cb) { this.events.set(type, (this.events.get(type) || []).filter(fn => fn !== cb)); }
+  }
+  const listeners = new Set();
+  const cc = { Node, Sprite, Label, Animation, Vec3, Component: class {},
+    _decorator: { ccclass: () => cls => cls, property: () => () => {} },
+    Input: { EventType: { MOUSE_MOVE: 'mouse', TOUCH_START: 'start', TOUCH_MOVE: 'move' } },
+    input: { on: (type) => listeners.add(type), off: (type) => listeners.delete(type) },
+    resources: { load: (p, type, callback) => callback(null, { path: p }) },
+  };
+  const cache = new Map();
+  const get = name => load(name, cc, cache);
+  get('farm/config/CropConfig.ts').applyCropCatalog([{ id: 'shallot', name: '小葱', humidity: [55, 75], targetFertility: 70 }]);
+  const { FarmModel } = get('farm/data/FarmModel.ts');
+  const { LandView } = get('farm/ui/LandView.ts');
+  const sprite = name => { const n = new Node(name); n.components.set(Sprite, new Sprite(n)); return n; };
+  const label = name => { const n = new Node(name); n.components.set(Label, new Label()); return n; };
+  const plotNode = col => new Node(String(col), sprite('soil'),
+    new Node('crop', sprite('stage'), new Node('growth', sprite('bg'), sprite('fill'), label('lb_growth'))),
+    new Node('ToolEffect', ...['watering', 'shovel', 'fertilize', 'harvest', 'unlock'].map(name => new Node(`fx_${name}`, sprite('Sprite')))),
+    new Node('pest', new Node('fx_pest'), new Node('fx_disease')), new Node('mature'));
+  const lands = new Node('lands', ...Array.from({ length: 4 }, (_, i) =>
+    new Node(`lands_${i + 1}`, ...Array.from({ length: 6 }, (_, col) => plotNode(col + 1)))));
+  const view = new LandView(lands);
+  view.farm = new FarmModel(); view.player = { gold: 100, level: 1 };
+  view.inventory = { query: () => [] };
+  return { view, get, listeners, lands, Sprite, Label };
+}
+
+test('unmounted land controller binds 24 plots, one stage sprite and strict 15-point soil thresholds', () => {
+  const { view, listeners } = farmFixture();
+  assert.equal(view.plots.length, 24);
+  assert.equal(listeners.size, 3);
+  const plot = view.farm.getPlot(1), tile = view.plots[0];
+  Object.assign(plot, { unlocked: true, crop: 'shallot', stage: 1, stageGrowth: 30, moisture: 40, fertility: 55 });
+  view.render();
+  assert.match(tile.soil.spriteFrame.path, /locked_1a/); // exactly 15 below: normal
+  assert.match(tile.stage.spriteFrame.path, /shallot-01/);
+  assert.equal(tile.fill.fillRange, .3);
+  plot.moisture = 39.99; view.render();
+  assert.match(tile.soil.spriteFrame.path, /locked_1d/);
+  plot.moisture = 70; plot.fertility = 54.99; plot.stage = 2; view.render();
+  assert.match(tile.soil.spriteFrame.path, /locked_1c/);
+  assert.match(tile.stage.spriteFrame.path, /shallot-02/);
+  plot.stage = 3; plot.mature = true; view.render();
+  assert.equal(tile.nodes.crop.active, false);
+  assert.equal(tile.nodes.growth.active, false);
+  assert.equal(tile.nodes.mature.active, true);
+  assert.equal(tile.growthLabel.string, '可采摘');
+  plot.pest.status = 'ACTIVE'; view.render();
+  assert.equal(tile.nodes.pest.active, true);
+  assert.equal(tile.nodes.fx_pest.active, true);
+  plot.crop = null; plot.mature = false; view.render();
+  assert.match(tile.soil.spriteFrame.path, /locked_1a/); // empty plot never shows deficiency
+  plot.unlocked = false; view.render();
+  assert.match(tile.soil.spriteFrame.path, /locked_1b/);
+  assert.equal(tile.nodes.pest.active, false);
+  view.destroy();
+  assert.equal(listeners.size, 0);
+  assert.equal(tile.node.events.get('touch-end').length, 0);
+});
+
+test('water command remains single-flight; effects activate nested fx and expire; cleanup is safe', async () => {
+  const { view } = farmFixture();
+  let calls = 0, complete;
+  view.onAction = async () => { calls++; return new Promise(resolve => { complete = resolve; }); };
+  const first = view.doWater(1, 2);
+  await view.doWater(1, 2);
+  assert.equal(calls, 1);
+  complete({ ok: true, message: 'ok' });
+  await first;
+  const effect = view.plots[0].nodes.fx_watering;
+  assert.equal(effect.active, true);
+  assert.equal(view.currentTool, 'none');
+  const now = Date.now(); view.now = () => now + 5000; view.update();
+  assert.equal(effect.active, false);
+  view.destroy();
+});
+
+test('soil information supplies all requested labels and clears stale values for locked/empty land', () => {
+  const { view, get } = farmFixture();
+  const { soilInfoValues } = get('farm/ui/SoilInfoPanel.ts');
+  const plot = view.farm.getPlot(1);
+  Object.assign(plot, { unlocked: true, crop: 'shallot', stage: 1, stageGrowth: 50, growthPerMinute: 50 });
+  let values = soilInfoValues(plot, 'normal');
+  assert.equal(values.cropName, '小葱');
+  assert.equal(values.remainingTime, '预计 9 分钟（按当前环境）');
+  assert.equal(values.harvestYield, '--');
+  assert.equal(values.fertilizerName, '无');
+  Object.assign(plot, { mature: true, harvestQuantity: 8 });
+  values = soilInfoValues(plot, 'normal');
+  assert.equal(values.matureState, '已成熟');
+  assert.equal(values.harvestYield, '8');
+  plot.unlocked = false;
+  values = soilInfoValues(plot, 'locked');
+  for (const name of ['moisture', 'fertility', 'cropName', 'cropStage', 'growth', 'growthSpeed',
+    'remainingTime', 'harvestCount', 'pest', 'disease', 'matureState', 'harvestYield', 'quality', 'plantLimit']) {
+    assert.equal(values[name], '--', name);
+  }
+  plot.unlocked = true; plot.crop = null; plot.mature = false;
+  assert.equal(soilInfoValues(plot, 'normal').cropName, '空地');
+  view.destroy();
+});
+
+test('late sprite responses cannot replace a newer crop stage or soil state', () => {
+  const requests = [];
+  const ui = load('farm/ui/Ui.ts', { resources: { load: (p, type, callback) => requests.push(callback) } });
+  const sprite = { isValid: true }, stage1 = {}, stage2 = {};
+  ui.applySprite(sprite, ['stage1']);
+  ui.applySprite(sprite, ['stage2']);
+  requests[1](null, stage2);
+  requests[0](null, stage1);
+  assert.equal(sprite.spriteFrame, stage2);
 });

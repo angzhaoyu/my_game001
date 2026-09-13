@@ -1,0 +1,53 @@
+﻿group,key,value
+land,totalPlots,24
+land,plotsPerRow,6
+land,rows,4
+land,initialUnlocked,1
+land,initialFertility,70
+land,initialSoilHealth,70
+land,initialMoisture,70
+land,dailyPlantLimit,3
+land,waterPerUse,5
+land,waterMaxTimes,10
+land,moistureDrainPerHour,6
+land,dailyNetIncomeCap,100
+land,fertilityAlertGap,15
+land,moistureAlertGap,15
+land,level,"{""baseExp"": 100, ""expGrowth"": 1.25, ""maxLevel"": 24}"
+growth,minuteMs,60000
+growth,stageBaseDivisor,1.2
+growth,minGrowthMultiplier,0.05
+growth,minEnvironmentMultiplier,0.2
+growth,minFertilityHighMultiplier,0.85
+growth,baseYield,10
+growth,initialQuality,60
+growth,qualityWindowMinutes,5
+growth,baseQualityGainPerMinute,8
+growth,bestFertilizerMultiplier,1.2
+growth,bestFertilizerQualityGain,0.1
+growth,temperaturePenaltyPerDegree,0.05
+growth,humidityPenaltyPerPoint,0.02
+growth,fertilityTargetBand,0.1
+growth,fertilityHighPenaltyFactor,1.5
+growth,temperatureQualityPenalty,"{""perDegree"": 0.02, ""max"": 0.2}"
+growth,humidityQualityPenalty,"{""perPoint"": 0.01, ""max"": 0.15}"
+growth,fertilityQualityPenalty,0.5
+growth,onsetQualityDamage,2.5
+growth,pestQualityDamagePerMinute,0.8
+growth,diseaseQualityDamagePerMinute,1.0
+growth,pestYieldPenalty,0.25
+growth,diseaseYieldPenalty,0.3
+growth,minYieldMultiplier,0.2
+growth,harvestSoilHealthCost,2
+growth,pestBaseChance,0.0002
+growth,diseaseBaseChance,0.0002
+growth,maxAppearChance,0.0015
+growth,riskPerTemperatureStep,0.0001
+growth,riskPerHumidityStep,0.0001
+growth,riskSoilHealthLow,0.0001
+growth,riskSoilHealthCritical,0.0001
+growth,initialCoins,100
+world,unsuitableSeasonMultiplier,0.85
+world,coldAlias,"{""rain"": ""小雪"", ""storm"": ""暴雪""}"
+initial,inventory,"{""seed_shallot"": 3, ""seed_lettuce"": 3, ""fert_compost"": 2}"
+login,regions,"[""大区一 · 电信"", ""大区二 · 网通"", ""大区三 · 移动""]"

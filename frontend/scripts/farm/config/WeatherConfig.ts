@@ -10,20 +10,9 @@ export type SeasonDef = RemoteSeason;
 
 export type WeatherDef = RemoteWeatherDef;
 
-export const SEASONS: Record<string, SeasonDef> = {
-  spring: { id: 'spring', name: '春', temp: [14, 22] },
-  summer: { id: 'summer', name: '夏', temp: [24, 32] },
-  autumn: { id: 'autumn', name: '秋', temp: [16, 25] },
-  winter: { id: 'winter', name: '冬', temp: [4, 12] },
-};
-
-export const WEATHER: Record<string, WeatherDef> = {
-  sunny: { id: 'sunny', name: '晴', tempModifier: 2, humidityModifier: 1.5, pestRisk: 0.0001, diseaseRisk: -0.0001 },
-  cloudy: { id: 'cloudy', name: '多云', tempModifier: 0, humidityModifier: 1.2, pestRisk: 0, diseaseRisk: 0 },
-  rain: { id: 'rain', name: '小雨', tempModifier: -1, humidityModifier: -1.5, pestRisk: -0.0002, diseaseRisk: 0.0002 },
-  storm: { id: 'storm', name: '暴雨', tempModifier: -3, humidityModifier: -2, pestRisk: 0.0003, diseaseRisk: 0.0005 },
-  drought: { id: 'drought', name: '干旱', tempModifier: 3, humidityModifier: 2, pestRisk: 0.0003, diseaseRisk: 0.0001 },
-};
+// 目录由 CSV 经服务端 bootstrap 下发，不在客户端重复维护数值表。
+export const SEASONS: Record<string, SeasonDef> = {};
+export const WEATHER: Record<string, WeatherDef> = {};
 
 let current: WorldData = {
   season: 'spring',

@@ -1,0 +1,11 @@
+﻿target,min,max,multiplier
+pest,0,20,0.98
+pest,21,40,0.95
+pest,41,65,0.9
+pest,66,85,0.8
+pest,86,100,0.65
+disease,0,20,0.97
+disease,21,40,0.93
+disease,41,65,0.88
+disease,66,85,0.78
+disease,86,100,0.6

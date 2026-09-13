@@ -35,10 +35,11 @@ export class FarmModel {
   }
 
   /** 土地显示态：未解锁 > 缺水 > 缺肥 > 正常 */
-  landState(plot: PlotData): LandState {
+  landState(plot: PlotData, fertilityGap = 0, moistureGap = 0): LandState {
     if (!plot.unlocked) return 'locked';
-    if (plot.lowMoisture) return 'dry';
-    if (plot.lowFertility) return 'lowfert';
+    const crop = getCropDef(plot.crop);
+    if (crop && plot.moisture < crop.humidity[0] - (moistureGap || LAND.MOISTURE_ALERT_GAP)) return 'dry';
+    if (crop && plot.fertility < crop.targetFertility - (fertilityGap || LAND.FERTILITY_ALERT_GAP)) return 'lowfert';
     return 'normal';
   }
 
@@ -75,7 +76,7 @@ export class FarmModel {
     return crop ? crop.humidity : null;
   }
 
-  /** 肥力目标区间：目标 ±10（与服务端 fertilityAlertGap 一致） */
+  /** 肥力目标区间：目标 ±提示阈值（与服务端 fertilityAlertGap 一致） */
   fertilityRange(plot: PlotData): [number, number] | null {
     const crop = getCropDef(plot.crop);
     if (!crop) return null;

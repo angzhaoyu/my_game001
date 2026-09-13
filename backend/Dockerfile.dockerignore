@@ -1,0 +1,13 @@
+**
+!backend/
+!backend/requirements.txt
+!backend/app/
+!backend/app/**
+!backend/migrations/
+!backend/migrations/**
+!frontend/
+!frontend/resources/
+!frontend/resources/datas/
+!frontend/resources/datas/*.csv
+**/__pycache__/
+**/*.pyc

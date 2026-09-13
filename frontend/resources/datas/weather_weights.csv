@@ -1,0 +1,5 @@
+﻿season,weights
+spring,"[[""sunny"", 35], [""cloudy"", 40], [""rain"", 20], [""storm"", 3], [""drought"", 2]]"
+summer,"[[""sunny"", 30], [""cloudy"", 25], [""rain"", 22], [""storm"", 18], [""drought"", 5]]"
+autumn,"[[""sunny"", 45], [""cloudy"", 35], [""rain"", 15], [""storm"", 2], [""drought"", 3]]"
+winter,"[[""sunny"", 50], [""cloudy"", 38], [""rain"", 10], [""storm"", 1], [""drought"", 1]]"

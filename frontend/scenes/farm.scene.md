@@ -1,6 +1,6 @@
 # Farm 场景节点契约（数值系统 v1.10）
 
-> 总原则：**先在 Cocos Creator 里把节点、动画、进度条、面板全部搭好，代码只负责「唤醒 / 切图 / 填字 / 播动画」。**
+> 总原则：**先在 Cocos Creator 里把节点、动画、进度条、面板全部搭好，土地代码只负责「唤醒 / 切图 / 填字」，动画由预制体负责。**
 > 代码不再在运行时创建 UI 节点；列表类单元格用编辑器预置的节点（不够时克隆第一个作为模板）。
 >
 > 需要调的参数（阈值、路径模板、次数上限等）都做成了组件上的 `@property`，可以在属性检查器里直接改。
@@ -12,10 +12,10 @@
 | 约定 | 说明 |
 |---|---|
 | 命名 | 节点名与下表完全一致；代码按名字查找，找不到时会 `console.warn` 并跳过（不会报错崩溃） |
-| 动画 | 任何 `fx_*` 节点挂 `Animation` 组件 + 默认 `AnimationClip`；代码只 `active=true` → `play()` → 播完 `active=false` |
+| 动画 | 土块 `fx_*` 根节点只切 `active`，动画放子 `Sprite`；详见土地预制体约定 |
 | 进度条 | `bg` + `fill`（Sprite）。`fill.fillRange` 为 0~1；如果组件上填了 `growthFillMaxWidth`，则改为按 width 缩放 |
 | 点击外部关闭 | 面板根节点铺满全屏，根节点自身接收 `TOUCH_END`（`event.target === 根节点`）时关闭 |
-| 土地图片 | 同一列有 6 张图：`farm/Lands_{state}1/locked_{col}{state}`（`state` 取 a/b/c/d，`col` 取 1..6），**不要遗漏任何一列** |
+| 土地图片 | 同一列有 6 张图：`farm/lands_{state}1/locked_{col}{state}`（`state` 取 a/b/c/d，`col` 取 1..6），**不要遗漏任何一列** |
 
 土块状态与图片后缀：
 
@@ -36,13 +36,13 @@ Canvas（挂载 GameRoot.ts）
 ├─ bg_ground                              Sprite        背景
 ├─ Camera                                 Camera        相机
 │
-├─ lands                                  Node          土地根节点（挂载 LandView.ts）
+├─ lands                                  Node          土地根节点（不挂脚本）
 │  ├─ lands_1                             Node          第 1 行
-│  │  ├─ land_1 … land_6                  Prefab        土地预制体实例（每个挂 LandPlot.ts）
+│  │  ├─ 1 … 6                            Prefab        土地预制体实例（不挂脚本）
 │  ├─ lands_2                             Node          第 2 行（结构相同）
 │  ├─ lands_3                             Node
 │  └─ lands_4                             Node
-│     └─ 子节点名也支持 "1".."6"（老场景兼容）
+│     └─ 每行都用 "1".."6"；兼容旧名 land_1..land_6
 │
 ├─ WeatherHud                             Node          天气栏（挂载 WeatherHud.ts，只有 Label，不做动画）
 │  ├─ lb_season                           Label         「季节：夏」
@@ -52,12 +52,6 @@ Canvas（挂载 GameRoot.ts）
 │
 ├─ ToolCursorLayer                        Node          工具光标层
 │  └─ ToolCursor                          Node          Sprite + UIOpacity(≈180)，代码只改位置/贴图/显隐
-│
-├─ ToolEffectLayer                        Node          兜底动画模板层（地块预制体里没有对应 fx 时才用）
-│  ├─ WaterEffectTemplate                 Node          Sprite + Animation
-│  ├─ FertilizerEffectTemplate            Node
-│  ├─ HarvestEffectTemplate               Node
-│  └─ ShovelEffectTemplate                Node
 │
 ├─ TopBar                                 Node          玩家信息栏（结构不变）
 │  └─ PlayerInfoSection
@@ -79,29 +73,25 @@ Canvas（挂载 GameRoot.ts）
 ├─ Toast                                  Node          提示（挂载 Toast.ts）
 │  └─ ToastLabel                          Label
 │
-├─ SoilInfoPanel                          Node          土壤信息框（挂载 SoilInfoPanel.ts，全屏根节点）
-│  └─ Panel                               Sprite        固定大小的面板
-│     ├─ header/Title                     Label         「第 3 块土地」
-│     ├─ header/CloseBth                  Button
-│     ├─ ScrollView                       ScrollView    可上下拉动
-│     │  └─ view/content                  Node
-│     │     ├─ row_moisture               Node          湿度
-│     │     │  ├─ lb_title                Label         「湿度」
-│     │     │  ├─ Bar/bg                  Sprite
-│     │     │  ├─ Bar/fill                Sprite        代码写 fillRange
-│     │     │  ├─ Bar/range               Sprite        作物适宜区间（有作物时唤醒）
-│     │     │  └─ lb_value                Label
-│     │     ├─ row_fertility              Node          肥力（结构同 row_moisture）
-│     │     ├─ row_soil_health            Node          土壤健康（fill + lb_value）
-│     │     ├─ row_crop                   Node          作物名/阶段（lb_crop）
-│     │     ├─ row_quality                Node          品质（lb_quality）
-│     │     ├─ row_yield                  Node          产量（lb_yield）
-│     │     ├─ row_plant_count            Node          今日播种次数（lb_plant_count）
-│     │     ├─ row_fertilizer             Node          生效肥料（lb_fertilizer，多行文本）
-│     │     ├─ row_medicine               Node          生效药品（lb_medicine）
-│     │     ├─ row_event                  Node          病虫害（lb_event）
-│     │     └─ btn_medicine               Button        「处理病虫害」→ 打开 MedicinePanel
-│     └─ footer/lb_footer                 Label
+├─ SoilInfoPanel                          Node          土壤信息框（挂 SoilInfoPanel.ts，全屏根节点）
+│  └─ Panel                               Node          固定大小，可在下面添加 ScrollView/view/content
+│     ├─ plotId                           Label         土地编号
+│     ├─ season / weather / temp          Label         分别为季节 / 天气 / 温度
+│     ├─ moisture / fertility / soilState Label         分别为湿度 / 肥力 / 土地状态
+│     ├─ cropName / cropStage             Label         分别为作物名称 / 生长阶段
+│     ├─ growth / growthSpeed             Label         分别为成长值 / 当前阶段成长速度
+│     ├─ remainingTime / harvestCount     Label         分别为预计剩余时间 / 预计产量
+│     ├─ fertilizerName                   Label         生效肥料列表（多行）
+│     ├─ fertilizerType                   Label         对应每行无机 / 有机
+│     ├─ fertilizerTime                   Label         对应每行剩余分钟
+│     ├─ pest / disease                   Label         分别为害虫 / 病害
+│     ├─ matureState / harvestYield       Label         分别为成熟状态 / 可收获数量
+│     ├─ quality                          Label         品质等级 / 分数 / 倍率
+│     ├─ lockPrice                        Label         解锁金币及等级要求
+│     ├─ plantLimit                       Label         今日播种次数 / 上限
+│     ├─ medicine                         Label         可选：生效药品及时间，保留用药信息
+│     ├─ btn_medicine                     Button        可选：处理病虫害（保留药品入口）
+│     └─ btn_close                        Button        可选：关闭；点击根节点空白也关闭
 │
 ├─ WaterPrompt                            Node          浇水次数框（挂载 WaterPrompt.ts，全屏根节点）
 │  └─ Panel
@@ -151,60 +141,62 @@ Canvas（挂载 GameRoot.ts）
 
 ## 2. LandPlot 土地预制体
 
-路径建议：`assets/resources/farm/prefabs/LandPlot.prefab`（挂 `LandPlot.ts`）。
+路径建议：`assets/resources/farm/prefabs/LandPlot.prefab`。**预制体不挂脚本，`lands` 也不挂脚本**。
+`LandView.ts` 已合并原 `LandPlot.ts` 的显示功能，是普通 TypeScript 控制器，不是 Cocos 组件。
+Canvas 上的 `GameRoot` 创建它，并在 `update/onDestroy` 调用刷新与释放。
 
-```
-LandPlot
-├─ soil                     Sprite    土块图（6 列 × 4 状态）
-│
-├─ states                   Node      土块状态动画（代码只切 active）
-│  ├─ fx_watering           Node      浇水动画
-│  ├─ fx_shovel             Node      铲地 / 初始化土块动画
-│  ├─ fx_fertilize          Node      施肥动画
-│  ├─ fx_harvest            Node      采摘动画
-│  ├─ fx_dry                Node      缺水（常驻显示，由代码按状态唤醒）
-│  └─ fx_lowfert            Node      缺肥（常驻显示）
-│
-├─ crop                     Node      作物（有作物时常驻，成熟后隐藏）
-│  ├─ stage_1               Sprite    第 1 阶段图（{cropId}-01）
-│  ├─ stage_2               Sprite    第 2 阶段图（{cropId}-02）
-│  ├─ stage_3               Sprite    第 3 阶段图（{cropId}-03）
-│  └─ growth                Node      成长进度条（成长值 0~100）
-│     ├─ bg                 Sprite
-│     ├─ fill               Sprite
-│     └─ lb_growth          Label     成长值 / 「可采摘」
-│
-├─ pest                     Node      病虫害（常驻显示）
-│  ├─ fx_pest               Node      害虫动画
-│  └─ fx_disease            Node      病害动画
-│
-├─ mature                   Node      成熟表现（成熟后唤醒）
-│  ├─ fx_mature             Node      成熟 / 可采摘动画（成熟瞬间播一次）
-│  └─ lb_mature             Label     「西红柿 ×10」
-│
-├─ lock                     Node      未解锁（未解锁时唤醒）
-│  ├─ icon_lock             Sprite    锁图标
-│  ├─ lb_price              Label     解锁价格
-│  └─ fx_unlock             Node      可解锁时的动画（金币+等级满足）+ 解锁成功动画
-│
-└─ notify                   Node      文字提醒（今日播种次数用尽等）
-   └─ label                 Label
+```text
+LandPlot                             Node（本行是预制体名，实例名为 1..6）
+├─ soil                              Sprite（始终显示，每种状态 6 张位置图按列 1..6 选择）
+├─ crop                              Node（有作物且未成熟时显示）
+│  ├─ stage                          Sprite（只有一个，切换作物三阶段图片）
+│  └─ growth                         Node（成长值 0..100，成熟后隐藏）
+│     ├─ bg                          Sprite
+│     ├─ fill                        Sprite（Filled 模式或宽度缩放）
+│     └─ lb_growth                   Label（成长值 / 可采摘）
+├─ ToolEffect                        Node（父节点保持 active）
+│  ├─ fx_watering                    Node（默认隐藏）
+│  │  └─ Sprite                      Sprite + 自制动画
+│  ├─ fx_shovel                      Node（同上，子 Sprite 放动画）
+│  ├─ fx_fertilize                   Node（同上）
+│  ├─ fx_harvest                     Node（同上）
+│  └─ fx_unlock                      Node（可选：解锁成功动画，同上）
+├─ pest                              Node（病虫害任一存在时显示）
+│  ├─ fx_pest                        Node / Sprite 子节点（害虫常驻动画）
+│  └─ fx_disease                     Node / Sprite 子节点（病害常驻动画）
+├─ mature                            Node（成熟后常驻显示，动画放子 Sprite）
+├─ lockPrice                         Label（可选：地块上显示解锁价格/等级）
+└─ plantLimit                        Label（可选：地块上显示今日播种次数）
 ```
 
-### LandPlot 组件属性（属性检查器可调）
+`soil` 也可以作为其余节点的父节点，查找会遍历地块子树。节点名在同一地块内应唯一。
+所有图片路径大小写必须与真实资源一致，默认使用小写 `farm/lands_*`。
+
+### 显示与动画约定
+
+- 土壤优先级：未解锁 `b` → 缺水 `d` → 缺肥 `c` → 正常 `a`。
+- **湿度 < 作物湿度下限 − 15** 时缺水；**肥力 < 作物目标肥力 − 15** 时缺肥。刚好相差 15 不切图，空地保持正常；同时缺水缺肥优先缺水。
+- 删除旧 `fx_dry`、`fx_lowfert`，不再维护缺水/缺肥动画；正常情况下显示 `soil` 的正常图。
+- `stage` 根据当前阶段取 `crops.csv` 的 `stage_icons`，默认 `<cropId>-01/-02/-03`。成熟隐藏整个 `crop`，改显示 `mature`；隐藏的 `lb_growth` 仍会写入“可采摘”。
+- `fx_*` 的子 `Sprite` 负责动画，土地控制器不调用 `Animation.play()`，不克隆效果节点。操作成功后激活对应根节点，默认按子动画剪辑时长 + 0.05 秒关闭（无剪辑时约 1 秒）。
+- **需在真实 Cocos 预制体中保证动画在每次激活时重播**，例如已有的激活播放组件/动画状态机；仅勾选 `Animation.playOnLoad` 不保证反复切换 active 会重播。病虫害与成熟表现由预制体配置为常驻/循环。这里不生成动画或激活播放脚本。
+- `ToolEffect` 保持 active，单个 `fx_*` 默认 inactive。已移除全局 `ToolEffectLayer` 模板与动态创建光标的兜底；请预置 `ToolCursorLayer/ToolCursor`（Sprite、UITransform、UIOpacity）。
+
+### GameRoot 属性（统一在 Canvas 调整）
 
 | 属性 | 默认 | 说明 |
 |---|---|---|
-| `soil` | — | 土块 Sprite |
-| `soilPathPattern` | `farm/lands_{state}1/locked_{col}{state}/spriteFrame` | 贴图路径模板，占位符 `{state}` `{col}` |
-| `cropNode` / `stage1..3` | — | 作物三阶段图 |
-| `growthBar` / `growthFill` / `growthFillMaxWidth` | 0 | 进度条；`growthFillMaxWidth>0` 时按宽度缩放，否则用 `fillRange` |
-| `pestFx` / `diseaseFx` / `dryFx` / `lowFertFx` | — | 状态动画节点 |
-| `matureNode` / `matureFx` / `matureLabel` | — | 成熟表现 |
-| `lockNode` / `lockPriceLabel` / `unlockableFx` | — | 未解锁 |
-| `notifyNode` / `notifyLabel` | — | 文字提醒 |
-| `fertilityAlertGap` | 0 | 缺肥阈值；**0 = 用服务端配置（默认 10 点）**，>0 时覆盖 |
-| `moistureAlertGap` | 0 | 缺水阈值；同上 |
+| `landsNode` | 按名查找 | 可直接拖入 lands |
+| `soilPathPattern` | `farm/lands_{state}1/locked_{col}{state}/spriteFrame` | `{state}` 为 a/b/c/d，`{col}` 为 1..6 |
+| `growthFillMaxWidth` | 0 | >0 按宽度缩放；0 使用 Sprite fillRange |
+| `fertilityAlertGap` / `moistureAlertGap` | 0 | 0 使用 CSV 下发值（15），>0 覆盖显示阈值，不改变服务端规则 |
+
+### 旧场景迁移
+
+1. 从 `lands` 移除旧 `LandView` 组件，从所有土地预制体移除旧 `LandPlot` 组件，再删除旧 `LandPlot.ts/.meta`。
+2. 将三个 `stage_1/2/3` 合为一个 `stage`；`states` 改为 `ToolEffect`，删除缺水/缺肥节点与全局效果模板。
+3. 按上面的 Label 名称重建 SoilInfoPanel；旧进度条/区间属性不再使用。名称用 `/` 分隔的行表示多个独立 Label，不是一个带斜线的节点名。
+4. 所有阈值/路径/宽度迁到 Canvas 的 GameRoot；刷新源码后检查 Missing Script 并做 Creator 预览。
 
 ---
 
@@ -214,7 +206,7 @@ LandPlot
 |---|---|
 | **浇水** | 点 LeftBar/Water → 弹 `WaterPrompt` 选次数 → 确认后 `ToolCursor` 跟随鼠标 → 点土块 → 发 `water` 命令 → 光标消失 + 播 `fx_watering`。再点一次 Water 取消 |
 | **铲子** | 点 Shovel → 光标跟随（**没有选择框**）→ 点土块 → 发 `shovel` 命令 → 播 `fx_shovel`（初始化土块） |
-| **施肥** | 点 Fertilizer → 弹 `FertilizePanel` → 点下面的肥料加入上面（已选则数量 +1，点上面的格子 -1）→ 可选「追加时间」→ 确认发 `fertilize` 命令 → 播 `fx_fertilize` |
+| **施肥** | 点 Fertilizer → 点土块 → 弹 `FertilizePanel` → 点下面的肥料加入上面（已选则数量 +1，点上面的格子 -1）→ 可选「追加时间」→ 确认发 `fertilize` 命令 → 播 `fx_fertilize` |
 | **去商店** | 施肥框里点 `btn_shop` → 打开商店 → 关闭商店后**自动回到施肥框** |
 | **采摘** | 点 Harvest → 光标跟随 → 点成熟土块 → 发 `harvest` 命令 → 播 `fx_harvest` |
 | **播种** | 未选工具时点**空地** → 弹 `SeedPanel` → 选种子 → 发 `plant` 命令 |
@@ -222,7 +214,7 @@ LandPlot
 | **解锁** | 未选工具时点**未解锁**的土块 → 金币+等级满足则发 `unlock_land`，否则 Toast 提示 |
 | **除虫/治病** | `SoilInfoPanel` 里出现 `btn_medicine` → 打开 `MedicinePanel` → 选药品 → 发 `apply_medicine` |
 
-面板内部（湿度/肥力/土壤健康进度条、作物适宜区间、生效肥料与剩余时间、病虫害等级、今日播种次数）全部由 `SoilInfoPanel.render()` 填值，节点在 Cocos 里摆好。
+信息框按同名 Label 自动绑定，可直接放面板下或 ScrollView/content 下；剩余时间按当前环境估算，并非固定倒计时承诺。预计产量与成熟后实际可收获数量分开显示。
 
 ---
 

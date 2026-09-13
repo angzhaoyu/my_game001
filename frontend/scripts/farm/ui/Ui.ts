@@ -6,6 +6,7 @@
  */
 import { Node, Sprite, SpriteFrame, resources } from 'cc';
 
+const spriteRequests = new WeakMap<Sprite, number>();
 const cache = new Map<string, SpriteFrame | null>();
 const pending = new Map<string, Array<(frame: SpriteFrame | null) => void>>();
 
@@ -27,10 +28,12 @@ export function loadSpriteFrame(path: string, callback: (frame: SpriteFrame | nu
 /** 依次尝试候选路径，第一个成功即应用到 sprite 上。 */
 export function applySprite(sprite: Sprite | null, paths: string[]): void {
   if (!sprite) return;
+  const request = (spriteRequests.get(sprite) || 0) + 1;
+  spriteRequests.set(sprite, request);
   const tryIndex = (index: number) => {
     if (index >= paths.length) return;
     loadSpriteFrame(paths[index], frame => {
-      if (!sprite.isValid) return;
+      if (!sprite.isValid || spriteRequests.get(sprite) !== request) return;
       if (frame) sprite.spriteFrame = frame;
       else tryIndex(index + 1);
     });
@@ -85,4 +88,8 @@ export function loadItemIcon(sprite: Sprite, icon: string, cellFallback = false)
     });
   };
   tryLoad(0);
+}
+
+export function setActive(node: Node | null | undefined, active: boolean): void {
+  if (node?.isValid && node.active !== active) node.active = active;
 }

@@ -18,7 +18,9 @@ services:
     restart: unless-stopped
 
   api:
-    build: .
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
     environment:
       APP_ENV: development
       APP_SECRET: local-compose-secret-change-before-deploy
