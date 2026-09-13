@@ -4,7 +4,14 @@
 
 玩法数值按 `farm_game_value_system_final_v1.10.md` 实现：1 分钟一次结算、季节/天气/温度、单一肥力、最佳肥料、病虫害与药品、品质五档、基础产量 10、每地每天最多播种 3 次、单地每日净收益上限 100 金币。前端按 `我想实现的.md` 的要求：**节点、动画、进度条、面板全部在 Cocos 里搭好，代码只负责唤醒/切图/填字/播动画**，可微调的参数都在组件属性上。
 
+静态数值不再抄在代码里：作物、肥料、药品、土地解锁、全局规则、土块状态、品质档位、季节与天气都在
+`frontend/resources/datas/*.csv`，由 `frontend/scripts/farm/config/Tables.ts` 统一读取；服务端 catalog
+到达后覆盖同名表（服务端权威）。改了 `backend/app/domain/catalog.py` 就用
+`python tools/gen_client_tables.py` 重新导出表格。土地显示由单文件 `ui/LandView.ts` 驱动
+（原 `LandPlot.ts` 已合并，土地预制体不需要挂脚本），缺水/缺肥靠换 `soil` 贴图表达，不再做状态动画。
+
 - 场景节点与土地预制体的完整契约：[frontend/scenes/farm.scene.md](frontend/scenes/farm.scene.md)
+- 配置表（CSV）的字段与改法：[frontend/resources/datas/README.md](frontend/resources/datas/README.md)
 - 接口与命令：[docs/API.md](docs/API.md)
 
 团队日常开发只需要先看 [Explain.md 的“日常开发怎么分工”](Explain.md#日常开发怎么分工)；不要求每个人理解全部文件。

@@ -1,3 +1,12 @@
+# 种植表原始笔记（已废弃，仅存档）
+
+> 原文件是 `frontend/新建文件夹/说明.md`（与两份草稿 CSV 一起放在代码目录里）。
+> 现在静态数值统一放 `frontend/resources/datas/*.csv`，由 `tools/gen_client_tables.py` 从服务端
+> `backend/app/domain/catalog.py` 导出；NPK 三属性模型也已被 v1.10 的「单一肥力」模型取代。
+> 这里只保留原文，方便对照当初的设计意图，实现一律以 `docs/VALUE_SYSTEM_NOTES.md` 为准。
+
+---
+
 Crop_Data
 
 ID	中文	类型	季节	温度	湿度	S1天数	S1(N,P,K)	S1肥料	S2天数	S2(N,P,K)	S2肥料	S3天数	S3(N,P,K)	S3肥料	产量	售价

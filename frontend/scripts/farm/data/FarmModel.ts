@@ -1,8 +1,8 @@
 /**
  * FarmModel.ts —— 农场「显示层」（纯逻辑，不依赖引擎，可单测）
  *
- * 这是服务端农场快照的只读投影：负责显示态和两次快照间的**视觉插值**。
- * 播种/浇水/施肥/收获必须发送服务端命令，本模型不提供资产修改入口。
+ * 这是服务端农场快照的只读投影：负责土块显示态与两次快照间的**视觉插值**。
+ * 播种 / 浇水 / 施肥 / 收获必须发送服务端命令，本模型不提供资产修改入口。
  */
 import { LAND } from '../config/LandConfig';
 import { getCropDef } from '../config/CropConfig';
@@ -16,14 +16,20 @@ export class FarmModel {
   lastTick: number = Date.now();
   /** 上次快照的时间，用于插值；服务端权威，插值只影响观感 */
   private previewAt: number = Date.now();
+  private humidityModifier = 1;
 
   constructor() {
     this.reset();
   }
 
-  reset() {
-    this.plots = [];
-    for (let i = 1; i <= LAND.TOTAL_PLOTS; i++) this.plots.push(emptyPlot(i));
+  reset(): void {
+    const init = {
+      fertility: LAND.INITIAL_FERTILITY,
+      soilHealth: LAND.INITIAL_SOIL_HEALTH,
+      moisture: LAND.INITIAL_MOISTURE,
+      quality: LAND.INITIAL_QUALITY,
+    };
+    this.plots = range(1, LAND.TOTAL_PLOTS).map(id => emptyPlot(id, init));
     this.lastTick = Date.now();
     this.previewAt = Date.now();
   }
@@ -34,11 +40,16 @@ export class FarmModel {
     return this.plots.find(plot => plot.id === id);
   }
 
-  /** 土地显示态：未解锁 > 缺水 > 缺肥 > 正常 */
-  landState(plot: PlotData): LandState {
+  /**
+   * 土块显示态（未解锁 > 缺水 > 缺肥 > 正常），只决定 `soil` 用哪张图。
+   * `gap` 为「低于作物需求多少点才换图」，默认取 `Game_Rule.soilAlertGap`（15）。
+   */
+  landState(plot: PlotData, gap = LAND.SOIL_ALERT_GAP): LandState {
     if (!plot.unlocked) return 'locked';
-    if (plot.lowMoisture) return 'dry';
-    if (plot.lowFertility) return 'lowfert';
+    const crop = getCropDef(plot.crop);
+    if (!crop) return 'normal';
+    if (plot.moisture < crop.humidity[0] - gap) return 'dry';
+    if (plot.fertility < crop.targetFertility - gap) return 'lowfert';
     return 'normal';
   }
 
@@ -61,26 +72,34 @@ export class FarmModel {
     return Math.min(1, Math.max(0, plot.stageGrowth / 100));
   }
 
-  hasPest(plot: PlotData): boolean {
-    return plot.pest.status === 'ACTIVE' && plot.pest.level > 0;
-  }
-
-  hasDisease(plot: PlotData): boolean {
-    return plot.disease.status === 'ACTIVE' && plot.disease.level > 0;
-  }
-
-  /** 湿度区间（作物 Hmin/Hmax），无作物时为 null */
+  /** 湿度适宜区间（作物 Hmin~Hmax），无作物时 null */
   moistureRange(plot: PlotData): [number, number] | null {
     const crop = getCropDef(plot.crop);
     return crop ? crop.humidity : null;
   }
 
-  /** 肥力目标区间：目标 ±10（与服务端 fertilityAlertGap 一致） */
-  fertilityRange(plot: PlotData): [number, number] | null {
+  /** 肥力适宜区间：目标 ± 换图阈值，与土块显示逻辑保持同一口径 */
+  fertilityRange(plot: PlotData, gap = LAND.SOIL_ALERT_GAP): [number, number] | null {
     const crop = getCropDef(plot.crop);
     if (!crop) return null;
-    const gap = LAND.FERTILITY_ALERT_GAP;
     return [Math.max(0, crop.targetFertility - gap), Math.min(100, crop.targetFertility + gap)];
+  }
+
+  /**
+   * 预计剩余分钟：按服务端给的成长速度线性外推（当前阶段 + 之后的阶段）。
+   * 只做显示；实际成熟时间以服务端分钟结算为准。
+   */
+  remainingMinutes(plot: PlotData): number {
+    const crop = getCropDef(plot.crop);
+    if (!crop || plot.mature) return 0;
+    if (!(plot.growthPerMinute > 0)) {
+      const standard = crop.stageMinutes
+        .slice(Math.max(0, plot.stage - 1))
+        .reduce((sum, minutes) => sum + minutes * LAND.STAGE_BASE_DIVISOR, 0);
+      return Math.ceil(standard);
+    }
+    const leftStages = Math.max(0, 3 - plot.stage);
+    return Math.ceil((100 - plot.stageGrowth + leftStages * 100) / plot.growthPerMinute);
   }
 
   // ---------------- 视觉插值 ----------------
@@ -89,7 +108,7 @@ export class FarmModel {
    * 用服务端给出的 growthPerMinute 在两次快照之间平滑推进进度条。
    * 真实成长仍以服务端分钟结算为准；这里只影响观感，不会上传任何数据。
    */
-  updateModel(nowMs: number) {
+  updateModel(nowMs: number): void {
     if (!Number.isFinite(nowMs)) nowMs = Date.now();
     const minutes = (nowMs - this.previewAt) / MINUTE_MS;
     if (minutes <= 0) return;
@@ -113,8 +132,6 @@ export class FarmModel {
     }
   }
 
-  private humidityModifier = 1;
-
   /** 由 GameRoot 在快照到达时同步（用于湿度插值） */
   setHumidityModifier(value: number): void {
     this.humidityModifier = Number.isFinite(value) ? value : 1;
@@ -122,19 +139,24 @@ export class FarmModel {
 
   // ---------------- 服务端快照装载 ----------------
 
-  loadJSON(data: FarmSave | null) {
+  loadJSON(data: FarmSave | null): void {
     if (!data || !Array.isArray(data.plots)) {
       this.reset();
       return;
     }
-    this.plots = [];
-    for (let i = 1; i <= LAND.TOTAL_PLOTS; i++) {
-      const src = data.plots.find(plot => plot.id === i);
-      this.plots.push(src ? normalizePlot(i, src) : emptyPlot(i));
-    }
+    this.plots = range(1, LAND.TOTAL_PLOTS).map(id => {
+      const src = data.plots.find(plot => plot.id === id);
+      return src ? normalizePlot(id, src) : emptyPlot(id);
+    });
     this.lastTick = typeof data.lastTick === 'number' ? data.lastTick : Date.now();
     this.previewAt = Date.now();
   }
+}
+
+function range(from: number, to: number): number[] {
+  const list: number[] = [];
+  for (let value = from; value <= to; value++) list.push(value);
+  return list;
 }
 
 /**
@@ -148,8 +170,8 @@ function normalizePlot(id: number, src: Partial<PlotData>): PlotData {
     ...base,
     ...src,
     id,
-    pest: { ...base.pest, ...(src.pest || {}) },
-    disease: { ...base.disease, ...(src.disease || {}) },
+    pest: { ...base.pest, ...src.pest },
+    disease: { ...base.disease, ...src.disease },
     activeFertilizers: Array.isArray(src.activeFertilizers) ? src.activeFertilizers : [],
     activeMedicines: Array.isArray(src.activeMedicines) ? src.activeMedicines : [],
   };

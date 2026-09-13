@@ -133,6 +133,15 @@ declare module 'cc' {
     name: string;
   }
 
+  export class Asset {
+    name: string;
+  }
+
+  /** CSV / txt / json 等文本资源在 Cocos 里以 TextAsset 形式导入 */
+  export class TextAsset extends Asset {
+    text: string;
+  }
+
   export enum SizeMode { CUSTOM, TRIMMED, RAW }
 
   export class Sprite extends Component {

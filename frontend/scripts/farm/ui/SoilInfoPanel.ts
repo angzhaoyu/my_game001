@@ -1,88 +1,161 @@
 /**
- * ui/SoilInfoPanel.ts —— 土壤信息框
+ * ui/SoilInfoPanel.ts —— 土壤信息框（双击土地唤醒，点框外关闭）
  *
- * 全部节点在 Cocos 里搭好（固定大小 + ScrollView 可上下拉动），代码只负责：
- *   - 双击土地 → 唤醒；点击框外 → 关闭；
- *   - 填充湿度 / 肥力 / 土壤健康进度条，并在有作物时唤醒「作物适宜区间」；
- *   - 列出生效中的肥料（名称 / 剩余时间 / 每分钟释放 / 是否当前阶段最佳）与药品。
+ * 面板在 Cocos 里摆好：固定大小 + ScrollView 可上下拉动，**每一行就是一个 Label**，
+ * 代码只按 Label 的节点名填字（`plotId` 与 `lb_plotId` 都能匹配）。
+ * 想加 / 减一行：改场景节点 + 改下面的 `TEXT` 表即可，不用动其它逻辑。
+ *
+ * ```text
+ * SoilInfoPanel                     Node   挂本组件（全屏根节点）
+ * └─ Panel                          Sprite 固定大小
+ *    ├─ bar_moisture                 Node  湿度条：bg / fill / range（range = 作物适宜区间）
+ *    ├─ bar_fertility                Node  肥力条：bg / fill / range
+ *    ├─ ScrollView/view/content      Node
+ *    │  ├─ plotId                    Label 土地编号
+ *    │  ├─ season / weather / temp   Label 季节 / 天气 / 温度
+ *    │  ├─ moisture / fertility      Label 湿度 / 肥力
+ *    │  ├─ soilState                 Label 土地状态（正常 / 缺水 / 缺肥 / 未解锁，来自 Soil_Data 表）
+ *    │  ├─ cropName / cropStage      Label 作物名称 / 生长阶段
+ *    │  ├─ growth / growthSpeed      Label 成长值 / 成长速度
+ *    │  ├─ remainingTime             Label 剩余时间
+ *    │  ├─ harvestCount              Label 预计产量
+ *    │  ├─ fertilizerName            Label 肥料名称（多行）
+ *    │  ├─ fertilizerType            Label 无机 / 有机（多行）
+ *    │  ├─ fertilizerTime            Label 剩余时间（多行）
+ *    │  ├─ pest / disease            Label 害虫 / 病害
+ *    │  ├─ matureState               Label 成熟状态
+ *    │  ├─ harvestYield              Label 收获数量
+ *    │  ├─ quality                   Label 品质
+ *    │  ├─ lockPrice                 Label 解锁价格 / 等级
+ *    │  └─ plantLimit                Label 播种次数
+ *    └─ btn_medicine                 Button「处理病虫害」→ 打开 MedicinePanel
+ * ```
  */
-import { _decorator, Button, Component, Label, Node, ScrollView, Sprite, UITransform } from 'cc';
-import { LAND } from '../config/LandConfig';
+import { _decorator, Component, Label, Node, ScrollView, Sprite } from 'cc';
+import { LAND, qualityGrade, soilStyle, unlockRow } from '../config/LandConfig';
 import { getCropDef } from '../config/CropConfig';
-import { fertilizerName } from '../config/FertilizerConfig';
-import { medicineName } from '../config/MedicineConfig';
-import { FarmModel } from '../data/FarmModel';
-import type { PlotData } from '../data/PlotData';
+import { fertilizerName, fertilizerTypeLabel, getFertilizerDef } from '../config/FertilizerConfig';
+import { currentWorld } from '../config/WeatherConfig';
+import type { FarmModel } from '../data/FarmModel';
+import type { ActiveFertilizer, PlotData } from '../data/PlotData';
+import {
+  bindClick, closeOnOutsideTouch, findChild, findLabel, findSprite, setActive, setBar, setRange, showOnTop,
+} from './NodeUtils';
 
 const { ccclass, property } = _decorator;
 
-/** 基础成熟产量（服务端 GROWTH_RULES.baseYield，前端只用于提示） */
-const BASE_YIELD = 10;
+/** 空值统一显示成 `—`，避免面板里出现空白行 */
+const EMPTY = '—';
 
 @ccclass('SoilInfoPanel')
 export class SoilInfoPanel extends Component {
-  @property(Node) public panelNode: Node | null = null;
-  @property(Label) public titleLabel: Label | null = null;
-
-  @property(Node) public moistureBar: Node | null = null;
-  @property(Sprite) public moistureFill: Sprite | null = null;
-  @property(Node) public moistureRange: Node | null = null;
-  @property(Label) public moistureValue: Label | null = null;
-
-  @property(Node) public fertilityBar: Node | null = null;
-  @property(Sprite) public fertilityFill: Sprite | null = null;
-  @property(Node) public fertilityRange: Node | null = null;
-  @property(Label) public fertilityValue: Label | null = null;
-
-  @property(Sprite) public soilHealthFill: Sprite | null = null;
-  @property(Label) public soilHealthValue: Label | null = null;
-
-  @property(Label) public cropLabel: Label | null = null;
-  @property(Label) public qualityLabel: Label | null = null;
-  @property(Label) public yieldLabel: Label | null = null;
-  @property(Label) public plantCountLabel: Label | null = null;
-
-  @property(Label) public fertilizerLabel: Label | null = null;
-  @property(Label) public medicineLabel: Label | null = null;
-  @property(Label) public eventLabel: Label | null = null;
-  @property(Node) public medicineButton: Node | null = null;
-
-  @property(ScrollView) public scrollView: ScrollView | null = null;
-
-  /** 覆盖服务端阈值：0 = 跟随服务端配置 */
-  @property({ tooltip: '缺肥提示阈值，0 = 跟随服务端配置' })
-  public fertilityAlertGap = 0;
-  @property({ tooltip: '缺水提示阈值，0 = 跟随服务端配置' })
-  public moistureAlertGap = 0;
+  @property({ type: Node, tooltip: '湿度进度条节点（内含 fill / range）；不填则按 bar_moisture 查找' })
+  public moistureBar: Node | null = null;
+  @property({ type: Node, tooltip: '肥力进度条节点（内含 fill / range）；不填则按 bar_fertility 查找' })
+  public fertilityBar: Node | null = null;
+  @property({ type: ScrollView, tooltip: '不填则自动找名为 ScrollView 的节点' })
+  public scrollViewComp: ScrollView | null = null;
+  @property({ tooltip: '缺肥 / 缺水换图阈值，0 = 读 Game_Rule.soilAlertGap' })
+  public soilAlertGap = 0;
 
   isOpen = false;
-  onClose: () => void = () => {};
-  onRequestMedicine: (plotId: number) => void = () => {};
-
   /** 当前展示的地块编号；LandView 用它跟随快照刷新 */
   currentPlotId = 0;
+  onRequestMedicine: (plotId: number) => void = () => {};
 
-  onLoad() {
-    // 点击面板外部（根节点空白处）关闭
-    this.node.on(Node.EventType.TOUCH_END, (event: any) => {
-      if (event?.target === this.node) this.close();
+  private labels = new Map<string, Label | null>();
+  private cache = new Map<string, string>();
+  private moistureFill: Sprite | null = null;
+  private moistureRangeNode: Node | null = null;
+  private fertilityFill: Sprite | null = null;
+  private fertilityRangeNode: Node | null = null;
+  private medicineButton: Node | null = null;
+  private scroll: ScrollView | null = null;
+
+  /** 字段名 → 文本。新增一行只要在这里加一个键，并在场景里放一个同名 Label。 */
+  private static readonly TEXT: Record<string, (panel: SoilInfoPanel, plot: PlotData, model: FarmModel) => string> = {
+    plotId: (_panel, plot) => `第 ${plot.id} 块土地`,
+    season: () => currentWorld().seasonName || EMPTY,
+    weather: () => currentWorld().weatherName || EMPTY,
+    temp: () => `${currentWorld().temperature.toFixed(1)}℃`,
+    moisture: (_panel, plot) => `${Math.round(plot.moisture)} / 100`,
+    fertility: (_panel, plot) => `${Math.round(plot.fertility)} / 100`,
+    soilState: (panel, plot, model) => soilStyle(model.landState(plot, panel.alertGap)).name,
+
+    cropName: (_panel, plot) => getCropDef(plot.crop)?.name ?? '空地（可播种）',
+    cropStage: (_panel, plot) => (plot.crop ? `第 ${plot.stage} / 3 阶段` : EMPTY),
+    growth: (_panel, plot) => (plot.crop ? `${Math.floor(plot.stageGrowth)} / 100` : EMPTY),
+    growthSpeed: (_panel, plot) => (plot.crop && !plot.mature
+      ? `+${plot.growthPerMinute.toFixed(2)} 成长值/分钟` : EMPTY),
+    remainingTime: (_panel, plot, model) => {
+      if (!plot.crop) return EMPTY;
+      if (plot.mature) return '已成熟';
+      const minutes = model.remainingMinutes(plot);
+      return minutes >= 60 ? `约 ${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分` : `约 ${minutes} 分钟`;
+    },
+    harvestCount: (_panel, plot) => `预计产量 ${plot.matureYield || LAND.BASE_YIELD}`,
+
+    fertilizerName: (_panel, plot) => listBy(plot.activeFertilizers, item => fertilizerName(item.id)),
+    fertilizerType: (_panel, plot) => listBy(plot.activeFertilizers, item => {
+      const definition = getFertilizerDef(item.id);
+      const type = definition ? fertilizerTypeLabel(definition.type) : EMPTY;
+      return item.best ? `${type}·本阶段最佳` : type;
+    }),
+    fertilizerTime: (_panel, plot) => listBy(plot.activeFertilizers, item => `剩余 ${Math.ceil(item.remainingMinutes)} 分钟`),
+
+    pest: (_panel, plot) => (plot.pest.status === 'ACTIVE' ? `害虫 Lv.${Math.round(plot.pest.level)}` : '无害虫'),
+    disease: (_panel, plot) => (plot.disease.status === 'ACTIVE' ? `病害 Lv.${Math.round(plot.disease.level)}` : '无病害'),
+    matureState: (_panel, plot) => (plot.mature ? '已成熟，可采摘' : (plot.crop ? '生长中' : '未播种')),
+    harvestYield: (_panel, plot) => `收获数量 ${plot.harvestQuantity}`,
+    quality: (_panel, plot) => {
+      if (!plot.crop) return EMPTY;
+      const grade = qualityGrade(plot.quality);
+      const name = plot.qualityGrade || grade?.name || EMPTY;
+      const multiplier = plot.qualityMultiplier || grade?.multiplier || 1;
+      return `${name} ×${multiplier.toFixed(2)}（${Math.round(plot.quality)} 分）`;
+    },
+    lockPrice: (_panel, plot) => {
+      if (plot.unlocked) return '已解锁';
+      const row = unlockRow(plot.id) ?? plot.unlock;
+      return row ? `${row.price} 金币 / ${row.minLevel} 级解锁` : '暂不可解锁';
+    },
+    plantLimit: (_panel, plot) => {
+      const limit = plot.dailyPlantLimit || LAND.DAILY_PLANT_LIMIT;
+      return `今日播种 ${plot.dailyPlantCount}/${limit}${plot.dailyPlantCount >= limit ? '（已用完）' : ''}`;
+    },
+  };
+
+  onLoad(): void {
+    closeOnOutsideTouch(this, () => this.close());
+    this.moistureBar = this.moistureBar || findChild(this.node, 'bar_moisture', 'moistureBar');
+    this.fertilityBar = this.fertilityBar || findChild(this.node, 'bar_fertility', 'fertilityBar');
+    this.moistureFill = this.moistureBar ? findSprite(this.moistureBar, 'fill') : null;
+    this.moistureRangeNode = this.moistureBar ? findChild(this.moistureBar, 'range') : null;
+    this.fertilityFill = this.fertilityBar ? findSprite(this.fertilityBar, 'fill') : null;
+    this.fertilityRangeNode = this.fertilityBar ? findChild(this.fertilityBar, 'range') : null;
+    this.scroll = this.scrollViewComp
+      || findChild(this.node, 'ScrollView')?.getComponent(ScrollView) || null;
+    this.medicineButton = findChild(this.node, 'btn_medicine', 'medicineButton');
+    bindClick(this.medicineButton, () => {
+      if (this.currentPlotId) this.onRequestMedicine(this.currentPlotId);
     });
-    if (this.medicineButton) {
-      this.medicineButton.off(Button.EventType.CLICK);
-      this.medicineButton.on(Button.EventType.CLICK, () => {
-        if (this.currentPlotId) this.onRequestMedicine(this.currentPlotId);
-      });
-    }
+    this.labels = new Map(Object.keys(SoilInfoPanel.TEXT).map(key => [key, findLabel(this.node, key)]));
     this.node.active = false;
+  }
+
+  /** 换图阈值：属性优先，其次表格值 */
+  get alertGap(): number {
+    return this.soilAlertGap > 0 ? this.soilAlertGap : LAND.SOIL_ALERT_GAP;
   }
 
   open(plot: PlotData, model: FarmModel): void {
     this.currentPlotId = plot.id;
     this.isOpen = true;
     this.node.active = true;
-    this.node.setSiblingIndex(this.node.parent ? this.node.parent.children.length - 1 : 0);
+    showOnTop(this.node);
+    this.cache.clear();
     this.render(plot, model);
-    if (this.scrollView) this.scrollView.scrollToTop(0);
+    this.scroll?.scrollToTop(0);
   }
 
   close(): void {
@@ -90,121 +163,30 @@ export class SoilInfoPanel extends Component {
     this.isOpen = false;
     this.node.active = false;
     this.currentPlotId = 0;
-    this.onClose();
   }
 
+  /** 快照每次刷新都会调用：只有值变化的 Label 才写字，避免反复触发布局 */
   render(plot: PlotData, model: FarmModel): void {
     if (!plot || plot.id !== this.currentPlotId) return;
-    if (this.titleLabel) this.titleLabel.string = `第 ${plot.id} 块土地`;
-    if (!plot.unlocked) {
-      const price = plot.unlock?.price ?? 0;
-      const level = plot.unlock?.minLevel ?? 1;
-      if (this.cropLabel) this.cropLabel.string = `未解锁：${price} 金币 / ${level} 级`;
-      setBar(this.moistureFill, 0);
-      setBar(this.fertilityFill, 0);
-      setBar(this.soilHealthFill, 0);
-      setActive(this.moistureRange, false);
-      setActive(this.fertilityRange, false);
-      if (this.moistureValue) this.moistureValue.string = '--';
-      if (this.fertilityValue) this.fertilityValue.string = '--';
-      if (this.soilHealthValue) this.soilHealthValue.string = '--';
-      if (this.fertilizerLabel) this.fertilizerLabel.string = '';
-      if (this.medicineLabel) this.medicineLabel.string = '';
-      if (this.eventLabel) this.eventLabel.string = '';
-      if (this.qualityLabel) this.qualityLabel.string = '';
-      if (this.yieldLabel) this.yieldLabel.string = '';
-      if (this.plantCountLabel) this.plantCountLabel.string = '';
-      setActive(this.medicineButton, false);
-      return;
-    }
-
-    const crop = getCropDef(plot.crop);
-    // 有作物时唤醒「作物适宜区间」：湿度取 Hmin~Hmax，肥力取目标 ±阈值
-    // （阈值可在组件属性上覆盖，0 表示跟随服务端配置）
-    const moistureRange = model.moistureRange(plot);
-    const gap = this.fertilityAlertGap > 0 ? this.fertilityAlertGap : LAND.FERTILITY_ALERT_GAP;
-    const fertilityRange: [number, number] | null = crop
-      ? [Math.max(0, crop.targetFertility - gap), Math.min(100, crop.targetFertility + gap)]
-      : null;
+    Object.keys(SoilInfoPanel.TEXT).forEach(key => {
+      const label = this.labels.get(key);
+      if (!label) return;
+      const value = SoilInfoPanel.TEXT[key](this, plot, model);
+      if (this.cache.get(key) === value) return;
+      this.cache.set(key, value);
+      label.string = value;
+    });
 
     setBar(this.moistureFill, plot.moisture / 100);
     setBar(this.fertilityFill, plot.fertility / 100);
-    setBar(this.soilHealthFill, plot.soilHealth / 100);
-    if (this.moistureValue) this.moistureValue.string = `${Math.round(plot.moisture)}`;
-    if (this.fertilityValue) this.fertilityValue.string = `${Math.round(plot.fertility)}`;
-    if (this.soilHealthValue) this.soilHealthValue.string = `${Math.round(plot.soilHealth)}`;
-
-    // 有作物时唤醒「作物适宜区间」
-    showRange(this.moistureRange, this.moistureBar, moistureRange);
-    showRange(this.fertilityRange, this.fertilityBar, fertilityRange);
-
-    if (this.cropLabel) {
-      this.cropLabel.string = crop
-        ? `${crop.name} · 第 ${Math.max(1, plot.stage)} 阶段 · ${plot.mature ? '已成熟' : '生长中'}`
-        : '空地（可播种）';
-    }
-    if (this.qualityLabel) {
-      this.qualityLabel.string = crop
-        ? `品质 ${Math.round(plot.quality)}（${plot.qualityGrade} ×${plot.qualityMultiplier}）`
-        : '';
-    }
-    if (this.yieldLabel) {
-      this.yieldLabel.string = plot.mature
-        ? `产量 ${plot.harvestQuantity}/${plot.matureYield}`
-        : (crop ? `预计产量 ${plot.matureYield || BASE_YIELD}` : '');
-    }
-    if (this.plantCountLabel) {
-      const limit = plot.dailyPlantLimit || LAND.DAILY_PLANT_LIMIT;
-      this.plantCountLabel.string = `今日播种 ${plot.dailyPlantCount}/${limit}`
-        + (plot.dailyPlantCount >= limit ? '（已用完）' : '');
-    }
-
-    if (this.fertilizerLabel) {
-      this.fertilizerLabel.string = plot.activeFertilizers.length
-        ? plot.activeFertilizers.map(item => {
-          const detail = item.perMinute > 0
-            ? `+${item.perMinute}/分钟`
-            : '即时生效';
-          return `${fertilizerName(item.id)} ×${Math.ceil(item.remainingMinutes)}分钟 ${detail}${item.best ? ' [最佳]' : ''}`;
-        }).join('\n')
-        : '暂无生效肥料';
-    }
-    if (this.medicineLabel) {
-      this.medicineLabel.string = plot.activeMedicines.length
-        ? plot.activeMedicines.map(item =>
-          `${medicineName(item.id)} 剩余 ${Math.ceil(item.remainingMinutes)} 分钟`).join('\n')
-        : '暂无生效药品';
-    }
-    const events: string[] = [];
-    if (plot.pest.status === 'ACTIVE') events.push(`害虫 Lv.${Math.round(plot.pest.level)}`);
-    if (plot.disease.status === 'ACTIVE') events.push(`病害 Lv.${Math.round(plot.disease.level)}`);
-    if (this.eventLabel) this.eventLabel.string = events.join(' / ') || '无病虫害';
-    setActive(this.medicineButton, events.length > 0);
+    setRange(this.moistureRangeNode, this.moistureBar, model.moistureRange(plot));
+    // 肥力区间 = 目标肥力 ± 换图阈值，与土块显示逻辑保持同一口径
+    setRange(this.fertilityRangeNode, this.fertilityBar, model.fertilityRange(plot, this.alertGap));
+    setActive(this.medicineButton, plot.pest.status === 'ACTIVE' || plot.disease.status === 'ACTIVE');
   }
 }
 
-function setBar(sprite: Sprite | null, ratio: number): void {
-  if (!sprite) return;
-  sprite.fillRange = Math.min(1, Math.max(0, ratio));
-}
-
-function setActive(node: Node | null, active: boolean): void {
-  if (node && node.isValid && node.active !== active) node.active = active;
-}
-
-/** 把「作物适宜区间」画成进度条上的一段高亮：只改 width/x，不新建节点。 */
-function showRange(
-  rangeNode: Node | null,
-  barNode: Node | null,
-  range: [number, number] | null,
-): void {
-  if (!rangeNode || !barNode) return;
-  setActive(rangeNode, !!range);
-  if (!range) return;
-  const width = barNode.getComponent(UITransform)?.width ?? 100;
-  const low = Math.min(1, Math.max(0, range[0] / 100));
-  const high = Math.min(1, Math.max(0, range[1] / 100));
-  const transform = rangeNode.getComponent(UITransform) || rangeNode.addComponent(UITransform);
-  transform.setContentSize(Math.max(2, width * (high - low)), transform.height || 8);
-  rangeNode.setPosition((low + high) / 2 * width - width / 2, rangeNode.position.y, 0);
+/** 生效中的肥料 / 药品列表：空则显示占位符，多行按行对齐 */
+function listBy(rows: ActiveFertilizer[], pick: (row: ActiveFertilizer) => string): string {
+  return rows.length ? rows.map(pick).join('\n') : EMPTY;
 }

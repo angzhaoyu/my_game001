@@ -3,8 +3,19 @@
  * 与后端 app/domain/serialization.py 的 RemotePlot 一一对应。
  */
 
-/** 土地显示态：normal 正常 / locked 未解锁 / dry 缺水 / lowfert 缺肥 */
+/**
+ * 土地显示态：normal 正常 / locked 未解锁 / dry 缺水 / lowfert 缺肥。
+ * 状态只用来换 `soil` 贴图（对应表 `Soil_Data`），不再挂 fx_dry / fx_lowfert 动画。
+ */
 export type LandState = 'normal' | 'locked' | 'dry' | 'lowfert';
+
+/** 空地块的初始值来源：`Game_Rule` 表（缺省 70 点） */
+export interface PlotInit {
+  fertility: number;
+  moisture: number;
+  soilHealth: number;
+  quality: number;
+}
 
 /** 作物定义（来自服务端 catalog.crops） */
 export interface CropDef {
@@ -100,19 +111,19 @@ export interface WorldData {
   timestampMs: number;
 }
 
-export function emptyPlot(id: number): PlotData {
+export function emptyPlot(id: number, init?: Partial<PlotInit>): PlotData {
   return {
     id,
     unlocked: false,
-    fertility: 70,
-    soilHealth: 70,
-    moisture: 70,
+    fertility: init?.fertility ?? 70,
+    soilHealth: init?.soilHealth ?? 70,
+    moisture: init?.moisture ?? 70,
     crop: null,
     stage: 0,
     stageGrowth: 0,
     plantAgeMinutes: 0,
     mature: false,
-    quality: 60,
+    quality: init?.quality ?? 60,
     qualityGrade: '普通',
     qualityMultiplier: 1,
     matureYield: 0,

@@ -1,0 +1,5 @@
+﻿状态,名称,后缀,贴图,判定
+normal,正常,a,farm/lands_{state}1/locked_{col}{state}/spriteFrame,默认：湿度与肥力都不低于作物需求 - soilAlertGap
+locked,未解锁,b,farm/lands_{state}1/locked_{col}{state}/spriteFrame,plot.unlocked == false
+lowfert,缺肥,c,farm/lands_{state}1/locked_{col}{state}/spriteFrame,有作物且 肥力 < 目标肥力 - soilAlertGap
+dry,缺水,d,farm/lands_{state}1/locked_{col}{state}/spriteFrame,有作物且 湿度 < 作物湿度下限 - soilAlertGap

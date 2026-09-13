@@ -1,260 +1,176 @@
 /**
- * ui/BackpackPanel.ts —— 背包面板逻辑（绑定 farm.scene 中的 BackpackPanel 节点）
+ * ui/BackpackPanel.ts —— 背包面板（绑定 farm.scene 里的 BackpackPanel 节点）
+ *
+ * 面板结构在 Cocos 里摆好：header（标题 + 关闭）、toolbar（分类 tab + 排序）、
+ * ScrollView/view/content（预置格子，每格挂 CellItem 或按名字找 icon/name/count/sell_btn）、footer。
+ * 这里只填数据与切显隐，不生成节点。
  */
-import { _decorator, Button, Color, Component, EventTouch, Label, Layout, Node, ScrollView, Size, tween, UIOpacity, UITransform, Vec3 } from 'cc';
+import { _decorator, Component, Label, Node, ScrollView, tween, UIOpacity, UITransform, Vec3 } from 'cc';
 import { InventoryModel } from '../data/InventoryModel';
 import { PlayerModel } from '../data/PlayerModel';
 import type { ItemCategory, InventoryStack } from '../data/ItemData';
 import { CATEGORY_LABEL } from '../data/ItemData';
 import { CellItem } from './CellItem';
 import type { GameActionHandler } from '../GameAction';
+import { bindScrollList, bindTabs, closeOnOutsideTouch, findChild } from './NodeUtils';
 
 const { ccclass } = _decorator;
 
-const C_TITLE   = new Color(255, 233, 176, 255);
-const C_TEXT    = new Color(243, 232, 207, 255);
-const C_TEXT_D  = new Color(58, 42, 18, 255);
+const CATEGORIES: (ItemCategory | 'all')[] = ['all', 'seed', 'fruit', 'fert', 'medicine'];
+const TAB_NAMES = ['tab', 'tab-001', 'tab-002', 'tab-003', 'tab-004'];
+type SortKey = 'time' | 'name';
 
 @ccclass('BackpackPanel')
 export class BackpackPanel extends Component {
   inventory!: InventoryModel;
   player!: PlayerModel;
-  onToast: (msg: string, duration?: number) => void = () => {};
+  onToast: (message: string, duration?: number) => void = () => {};
   onAction: GameActionHandler = async () => ({ ok: false, message: '网络服务尚未就绪' });
 
+  isOpen = false;
+
   private panelNode: Node | null = null;
-  private pendingItems = new Set<string>();
   private scrollView: ScrollView | null = null;
   private contentNode: Node | null = null;
   private footerLabel: Label | null = null;
-  private tabs: { node: Node; lb: Label | null; cat: ItemCategory | 'all' }[] = [];
-  private sortBtns: { node: Node; lb: Label | null; key: 'time' | 'name' }[] = [];
-
+  private sortButtons: { node: Node; key: SortKey }[] = [];
+  private selectTab: (index: number) => void = () => {};
+  private pendingItems = new Set<string>();
   private category: ItemCategory | 'all' = 'all';
-  private sortKey: 'time' | 'name' = 'time';
+  private sortKey: SortKey = 'time';
   private sortDir: 'asc' | 'desc' = 'desc';
-  isOpen = false;
 
-  onLoad() {
-    this.bindNodes();
-    //this.node.active = false;
-  }
+  onLoad(): void {
+    closeOnOutsideTouch(this, () => this.close());
+    const list = bindScrollList(this.node);
+    this.panelNode = list.panel;
+    this.scrollView = list.scroll;
+    this.contentNode = list.content;
 
-  private bindNodes() {
-    this.node.on(Node.EventType.TOUCH_END, (e: EventTouch) => {
-      if (e.target === this.node) this.close();
-    });
+    const header = findChild(this.panelNode, 'header');
+    bindCloseButton(header, () => this.close());
 
-    this.panelNode = this.node.getChildByName('Panel') || this.node;
-    const toolbar = this.findDescendant(this.panelNode, 'toolbar');
-    const header = this.findDescendant(this.panelNode, 'header');
-    const scroll = this.findDescendant(this.panelNode, 'ScrollView');
-    const footer = this.findDescendant(this.panelNode, 'Footer') || this.findDescendant(this.panelNode, 'footer');
+    const toolbar = findChild(this.panelNode, 'toolbar');
+    this.selectTab = bindTabs(toolbar, TAB_NAMES, index => this.setCategory(CATEGORIES[index]));
+    this.bindSortButtons(toolbar);
 
-    if (scroll) {
-      this.scrollView = scroll.getComponent(ScrollView);
-      if (this.scrollView) {
-        this.scrollView.verticalScrollBar = null;
-      }
-      const viewNode = scroll.getChildByName('view');
-      if (viewNode) {
-        this.contentNode = viewNode.getChildByName('content');
-        if (this.scrollView && this.contentNode) {
-          this.scrollView.content = this.contentNode;
-        }
-      }
-    }
-
-    if (this.contentNode) {
-      let layout = this.contentNode.getComponent(Layout) || this.contentNode.addComponent(Layout);
-      layout.cellSize = new Size(97.33, 97.33);
-      const ut = this.contentNode.getComponent(UITransform);
-      if (ut) {
-        ut.setAnchorPoint(0.5, 1);
-      }
-    }
-
-    if (header) {
-      const closeBtn = header.getChildByName('CloseBth') || header.getChildByName('close_btn') || header.getChildByName('CloseBtn');
-      if (closeBtn) {
-        closeBtn.off(Button.EventType.CLICK);
-        closeBtn.on(Button.EventType.CLICK, () => this.close());
-      }
-    }
-
-    if (toolbar) {
-      const catList: (ItemCategory | 'all')[] = ['all', 'seed', 'fruit', 'fert', 'medicine'];
-      const tabNames = ['tab', 'tab-001', 'tab-002', 'tab-003', 'tab-004'];
-      tabNames.forEach((name, i) => {
-        const tabNode = toolbar.getChildByName(name);
-        if (tabNode) {
-          const lb = tabNode.getComponentInChildren(Label);
-          const cat = catList[i];
-          tabNode.off(Button.EventType.CLICK);
-          tabNode.on(Button.EventType.CLICK, () => this.setCategory(cat));
-          this.tabs.push({ node: tabNode, lb, cat });
-        }
-      });
-
-      const timeBtn = toolbar.getChildByName('btn_time') || toolbar.getChildByName('btn_时间');
-      const nameBtn = toolbar.getChildByName('btn_name') || toolbar.getChildByName('btn_名称');
-      if (timeBtn) {
-        const lb = timeBtn.getComponentInChildren(Label);
-        timeBtn.off(Button.EventType.CLICK);
-        timeBtn.on(Button.EventType.CLICK, () => this.setSort('time'));
-        this.sortBtns.push({ node: timeBtn, lb, key: 'time' });
-      }
-      if (nameBtn) {
-        const lb = nameBtn.getComponentInChildren(Label);
-        nameBtn.off(Button.EventType.CLICK);
-        nameBtn.on(Button.EventType.CLICK, () => this.setSort('name'));
-        this.sortBtns.push({ node: nameBtn, lb, key: 'name' });
-      }
-    }
-
-    if (footer) {
-      this.footerLabel = footer.getComponentInChildren(Label);
-    }
-
+    const footer = findChild(this.panelNode, 'footer', 'Footer');
+    this.footerLabel = footer?.getComponentInChildren(Label) ?? null;
     this.refreshTab();
     this.refreshSort();
   }
 
-  private findDescendant(root: Node | null, name: string): Node | null {
-    if (!root) return null;
-    if (root.name === name) return root;
-    for (const child of root.children) {
-      const found = this.findDescendant(child, name);
-      if (found) return found;
-    }
-    return null;
+  /** 排序按钮：点当前项切换升 / 降序 */
+  private bindSortButtons(toolbar: Node | null): void {
+    if (!toolbar) return;
+    ([['btn_time', 'time'], ['btn_name', 'name']] as [string, SortKey][]).forEach(([name, key]) => {
+      const node = findChild(toolbar, name, key === 'time' ? 'btn_时间' : 'btn_名称');
+      if (!node) return;
+      node.off(Node.EventType.TOUCH_END);
+      node.on(Node.EventType.TOUCH_END, () => this.setSort(key));
+      this.sortButtons.push({ node, key });
+    });
   }
 
-  open() {
+  open(): void {
     this.isOpen = true;
     this.node.active = true;
     this.render();
-    if (this.panelNode) {
-      const op = this.panelNode.getComponent(UIOpacity) || this.panelNode.addComponent(UIOpacity);
-      op.opacity = 0;
-      this.panelNode.setScale(0.9, 0.9, 1);
-      tween(op).stop();
-      tween(op).to(0.18, { opacity: 255 }).start();
-      tween(this.panelNode).stop();
-      tween(this.panelNode).to(0.22, { scale: new Vec3(1, 1, 1) }).start();
-    }
+    if (!this.panelNode) return;
+    const opacity = this.panelNode.getComponent(UIOpacity) || this.panelNode.addComponent(UIOpacity);
+    opacity.opacity = 0;
+    this.panelNode.setScale(0.9, 0.9, 1);
+    tween(opacity).stop();
+    tween(opacity).to(0.18, { opacity: 255 }).start();
+    tween(this.panelNode).stop();
+    tween(this.panelNode).to(0.22, { scale: new Vec3(1, 1, 1) }).start();
   }
 
-  close() {
+  close(): void {
     this.isOpen = false;
     this.node.active = false;
   }
 
-  render() {
+  render(): void {
     if (!this.contentNode) return;
     const list = this.inventory.query({ category: this.category, sort: this.sortKey, dir: this.sortDir });
     const children = this.contentNode.children;
-
-    for (let i = 0; i < children.length; i++) {
-      const child = children[i];
-      if (i < list.length) {
-        child.active = true;
-        let ci = child.getComponent(CellItem) || child.addComponent(CellItem);
-        ci.init(list[i],
-          (id) => this.sellItem(id),
-          (st) => this.showDetail(st));
-      } else {
-        child.active = false;
-      }
-    }
-
-    // 复用第一个格子作为模板克隆补齐（不再 new 空节点）
     const template = children.length > 0 ? children[0] : null;
-    for (let i = children.length; i < list.length; i++) {
-      if (!template) break;
-      const it = list[i];
+    children.forEach((child, index) => {
+      child.active = index < list.length;
+      if (index < list.length) bindCellItem(child, list[index], this);
+    });
+    for (let index = children.length; index < list.length && template; index++) {
       const cell = template.clone();
       cell.active = true;
-      const ci = cell.getComponent(CellItem) || cell.addComponent(CellItem);
-      ci.init(it,
-        (id) => this.sellItem(id),
-        (st) => this.showDetail(st));
       this.contentNode.addChild(cell);
+      bindCellItem(cell, list[index], this);
     }
-
-    const layout = this.contentNode.getComponent(Layout);
-    const ut = this.contentNode.getComponent(UITransform);
-    if (ut) {
-      ut.setAnchorPoint(0.5, 1);
-    }
-    if (layout) {
-      layout.cellSize = new Size(97.33, 97.33);
-      layout.updateLayout();
-    }
-    if (this.footerLabel) {
-      this.footerLabel.string = `共 ${list.length} 件物品`;
-    }
-    if (this.scrollView) {
-      this.scrollView.scrollToTop(0);
-    }
+    this.contentNode.getComponent(UITransform)?.setAnchorPoint(0.5, 1);
+    if (this.footerLabel) this.footerLabel.string = `共 ${list.length} 件物品`;
+    this.scrollView?.scrollToTop(0);
   }
 
-  private setCategory(c: ItemCategory | 'all') {
-    this.category = c;
+  private setCategory(category: ItemCategory | 'all'): void {
+    this.category = category;
     this.refreshTab();
     this.render();
   }
 
-  private setSort(k: 'time' | 'name') {
-    if (this.sortKey === k) {
-      this.sortDir = this.sortDir === 'desc' ? 'asc' : 'desc';
-    } else {
-      this.sortKey = k;
+  private setSort(key: SortKey): void {
+    if (this.sortKey === key) this.sortDir = this.sortDir === 'desc' ? 'asc' : 'desc';
+    else {
+      this.sortKey = key;
       this.sortDir = 'desc';
     }
     this.refreshSort();
     this.render();
   }
 
-  private refreshTab() {
-    const idx = (['all', 'seed', 'fruit', 'fert', 'medicine'] as (ItemCategory | 'all')[])
-      .indexOf(this.category);
-    this.tabs.forEach((t, i) => {
-      const active = i === idx;
-      if (t.lb) {
-        t.lb.color = active ? C_TEXT_D : C_TEXT;
-        t.lb.isBold = active;
-      }
+  private refreshTab(): void {
+    this.selectTab(CATEGORIES.indexOf(this.category));
+  }
+
+  private refreshSort(): void {
+    this.sortButtons.forEach(({ node, key }) => {
+      const label = node.getComponentInChildren(Label);
+      if (!label) return;
+      const active = this.sortKey === key;
+      label.string = (key === 'time' ? '时间' : '名称') + (active ? (this.sortDir === 'desc' ? ' ↓' : ' ↑') : '');
     });
   }
 
-  private refreshSort() {
-    this.sortBtns.forEach((b) => {
-      const active = this.sortKey === b.key;
-      const arrow = active ? (this.sortDir === 'desc' ? ' ↓' : ' ↑') : '';
-      if (b.lb) {
-        b.lb.string = (b.key === 'time' ? '时间' : '名称') + arrow;
-        b.lb.color = active ? C_TITLE : C_TEXT;
-        b.lb.isBold = active;
-      }
-    });
+  /** 详情走 Toast，不再单独做弹窗（按需求：优先用场景里现成的节点） */
+  showDetail(stack: InventoryStack): void {
+    const hours = Math.floor((Date.now() - stack.acquired) / 3_600_000);
+    const ago = hours < 1 ? '刚刚' : (hours < 24 ? `${hours}小时前` : `${Math.floor(hours / 24)}天前`);
+    this.onToast(`【${CATEGORY_LABEL[stack.category]}】${stack.name} × ${stack.count} · 回收价 ${stack.value} · 获得于 ${ago}`, 2.5);
   }
 
-  private showDetail(st: InventoryStack) {
-    const h = Math.floor((Date.now() - st.acquired) / 3600000);
-    const ago = h < 1 ? '刚刚' : (h < 24 ? h + '小时前' : Math.floor(h / 24) + '天前');
-    this.onToast(`【${CATEGORY_LABEL[st.category]}】${st.name} × ${st.count} · 回收价 ${st.value} · 获得于 ${ago}`, 2.5);
-  }
-
-  private async sellItem(id: string) {
-    if (this.pendingItems.has(id)) { this.onToast('该物品正在同步'); return; }
-    this.pendingItems.add(id);
+  async sellItem(itemId: string): Promise<void> {
+    if (this.pendingItems.has(itemId)) {
+      this.onToast('该物品正在同步');
+      return;
+    }
+    this.pendingItems.add(itemId);
     try {
-      const result = await this.onAction('sell_item', { itemId: id, quantity: 1 });
+      const result = await this.onAction('sell_item', { itemId, quantity: 1 });
       this.onToast(result.message);
       this.render();
     } finally {
-      this.pendingItems.delete(id);
+      this.pendingItems.delete(itemId);
     }
   }
+}
+
+function bindCloseButton(header: Node | null, close: () => void): void {
+  const button = header ? findChild(header, 'CloseBth', 'CloseBtn', 'close_btn', 'btn_close') : null;
+  if (!button) return;
+  button.off(Node.EventType.TOUCH_END);
+  button.on(Node.EventType.TOUCH_END, close);
+}
+
+function bindCellItem(cell: Node, stack: InventoryStack, panel: BackpackPanel): void {
+  const item = cell.getComponent(CellItem) || cell.addComponent(CellItem);
+  item.init(stack, id => { void panel.sellItem(id); }, stack2 => panel.showDetail(stack2));
 }

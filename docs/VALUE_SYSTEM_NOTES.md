@@ -91,9 +91,10 @@
 
 | 文件 | 内容 |
 |---|---|
-| `scripts/farm/ui/LandPlot.ts` | 土地预制体组件：切土块图、切作物三阶段、成长进度条、缺水/缺肥/病害/成熟动画、锁与解锁动画、播种次数提醒 |
-| `scripts/farm/ui/LandView.ts` | 装配 24 块地、四种工具、跟随光标、双击开土壤信息框 |
-| `scripts/farm/ui/SoilInfoPanel.ts` | 固定大小 + ScrollView；湿度/肥力/土壤健康进度条 + 作物适宜区间；生效肥料（剩余时间/每分钟释放/是否最佳）与药品；「处理病虫害」按钮 |
+| `scripts/farm/ui/LandView.ts` | **土地全部在这一个文件里**（原 `LandPlot.ts` 已合并进来）：装配 `lands_*/1..6`、切 `soil` 图、作物三阶段换图、成长进度条、病虫害/成熟/解锁动画唤醒、四种工具与跟随光标、双击开信息框。预制体不需要挂脚本 |
+| `scripts/farm/ui/SoilInfoPanel.ts` | 固定大小 + ScrollView；按 Label 名填 23 项信息（编号/季节/天气/温度/湿度/肥力/土地状态/作物/阶段/成长值/速度/剩余时间/预计产量/肥料名·类型·剩余时间/害虫/病害/成熟/收获/品质/解锁价/播种次数）+ 湿度肥力进度条与适宜区间；「处理病虫害」按钮 |
+| `scripts/farm/ui/NodeUtils.ts` | 面板共用的小工具：按名字找节点、切 active、进度条、适宜区间、tab 绑定、列表格子复用 |
+| `scripts/farm/config/Tables.ts` | CSV 配置表引擎：解析 `resources/datas/*.csv`，服务端 catalog 用同一套字段别名覆盖，代码里不再写死数值 |
 | `scripts/farm/ui/WaterPrompt.ts` | 浇水次数选择（`btn_1`…`btn_5`，名称里带数字） |
 | `scripts/farm/ui/FertilizePanel.ts` | 上半「已选」/ 下半「已有」、追加时间开关、跳转商店（关闭后自动回来） |
 | `scripts/farm/ui/ItemPickerPanel.ts` | 通用选择框，种子与药品复用 |
@@ -103,8 +104,13 @@
 **节点、动画、进度条、面板全部在 Cocos 里搭**，代码只做：切 `active`、换 `spriteFrame`、
 填 `Label`、播已经做好的 `Animation`。完整节点层级见 `frontend/scenes/farm.scene.md`。
 
-可调参数都在组件属性上（`LandPlot.fertilityAlertGap` / `moistureAlertGap` / `soilPathPattern`、
-`growthFillMaxWidth`、`SoilInfoPanel.fertilityAlertGap` 等），填 0 表示跟随服务端配置。
+- 缺水 / 缺肥**不再有独立动画节点**（`fx_dry` / `fx_lowfert` 已删除），只换 `soil` 贴图，
+  换图阈值 = 作物需求 − `Game_Rule.soilAlertGap`（15 点）；服务端 `lowMoisture` / `lowFertility`
+  用同一阈值下发，前端不重复计算判定；
+- 静态定义（作物 / 肥料 / 药品 / 土地 / 全局数值 / 土块状态 / 品质 / 季节 / 天气）全部在
+  `frontend/resources/datas/*.csv`，改服务端数值后跑 `python tools/gen_client_tables.py` 同步；
+- 可调参数在组件属性上（`LandView.soilAlertGap` / `cropPathPattern` / `growthFillMaxWidth`、
+  `SoilInfoPanel.soilAlertGap` 等），填 0 表示跟随表格与服务端配置。
 
 ---
 

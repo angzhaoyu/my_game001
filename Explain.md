@@ -39,15 +39,19 @@ my_game/
 │   │   │   └── sync/              # 幂等命令队列、版本冲突恢复、轮询刷新
 │   │   ├── login/                 # 登录场景表现层
 │   │   └── farm/
-│   │       ├── config/            # 服务端配置的运行时镜像（只用于显示）
+│   │       ├── config/            # CSV 配置表读取器（Tables.ts + 各表 spec），不依赖 cc
 │   │       ├── data/              # 客户端展示模型（服务端快照的只读投影）
 │   │       ├── ui/                # Cocos 组件（只唤醒节点，不创建节点）
 │   │       ├── GameAction.ts      # UI 到应用层的命令接口
 │   │       └── GameRoot.ts        # 场景装配与快照投影
 │   ├── scenes/                    # 场景节点契约文档
-│   ├── resources/                 # 资源契约文档
+│   ├── resources/
+│   │   ├── datas/                 # 客户端 CSV 配置表（作物/肥料/药品/土地/规则/土块/品质/季节/天气）
+│   │   └── images.md              # 图片资源契约文档
 │   ├── package.json
 │   └── tsconfig.core.json         # 不依赖 cc 的核心模块类型检查
+├── tools/
+│   └── gen_client_tables.py      # 服务端 catalog → frontend/resources/datas/*.csv
 ├── docs/                           # 架构、API、上线、协作说明
 ├── .github/                        # CODEOWNERS、PR 模板
 └── docs/ci.workflow.yml.example   # GitHub Actions 模板（需维护者启用）
@@ -113,7 +117,8 @@ def _handle_remove_crop(self, state, payload, now_ms):
 1. 先在 `frontend/scenes/*.scene.md` 写清节点层级（含土地预制体的子节点）；
 2. 在 Cocos 里把节点、动画、进度条、面板摆好，挂上对应脚本；
 3. 脚本只做三件事：切 `active`、换 `spriteFrame`、播已经做好的 `Animation`；
-4. 需要调的参数做成组件 `@property`（例如缺肥/缺水阈值、土块贴图路径模板），
+4. 需要调的参数做成组件 `@property`（例如换图阈值、土块贴图路径模板），静态数值写进
+   `frontend/resources/datas/*.csv`（改完服务端数值后跑 `python tools/gen_client_tables.py` 同步），
    在属性检查器里调，不改代码；
 5. 列表类单元格用编辑器预置的节点，数量不够时克隆第一个作为模板（参考 `BackpackPanel`）。
 

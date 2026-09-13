@@ -1,5 +1,12 @@
 **图片资源清单（整理版）**
 
+> 贴图路径模板与判定规则写在配置表 `resources/datas/Soil_Data.csv` 里（同目录还有作物、肥料、
+> 药品、土地、全局数值、品质、季节、天气表），改路径只改表，不用改代码。
+>
+> **路径大小写以 `Soil_Data.csv` 为准**（全小写）：土块贴图必须放在
+> `assets/resources/farm/lands_{a|b|c|d}1/locked_{1..6}{state}.png`，
+> 代码加载的是 `farm/lands_{state}1/locked_{col}{state}/spriteFrame`。
+
 ### 〇、作物图片（v1.10）
 
 每种作物 3 个阶段图，命名为 `Crop_Data` 的 ID 加 `-01 / -02 / -03`，例如：
@@ -42,8 +49,10 @@ assets/resources/farm/effects/
 ├─ harvest/                  # HarvestEffect.anim + frames/帧图片
 └─ shovel/                   # ShovelEffect.anim + frames/帧图片
 ```
-- 具体节点绑定请参考：`../scenes/tool-effects.setup.md`
-- 旧代码生成的水滴、肥雾、弹跳、飘字动画已全部移除。
+- 四种动画分别放在土地预制体的 `ToolEffect/fx_watering`、`fx_shovel`、`fx_fertilize`、`fx_harvest` 节点里，
+  节点绑定见 `../scenes/farm.scene.md` §2。
+- 旧代码生成的水滴、肥雾、弹跳、飘字动画，以及 `fx_dry`（缺水）/ `fx_lowfert`（缺肥）状态动画
+  **已全部移除**：缺水与缺肥改为直接换 `soil` 贴图（低于作物需求 15 点时切换）。
 
 ---
 
@@ -72,35 +81,18 @@ resources/
 │  └─ nav_me_on.png
 │
 ├─ Farm/
-│  ├─ bg_ground.png
-│  ├─ Lands_a1/
-│  │  ├─ locked_1a.png
-│  │  ├─ locked_2a.png
-│  │  ├─ locked_3a.png
-│  │  ├─ locked_4a.png
-│  │  ├─ locked_5a.png
-│  │  └─ locked_6a.png
-│  ├─ Lands_b1/
-│  │  ├─ locked_1b.png
-│  │  ├─ locked_2b.png
-│  │  ├─ locked_3b.png
-│  │  ├─ locked_4b.png
-│  │  ├─ locked_5b.png
-│  │  └─ locked_6b.png
-│  ├─ Lands_c1/
-│  │  ├─ locked_1c.png
-│  │  ├─ locked_2c.png
-│  │  ├─ locked_3c.png
-│  │  ├─ locked_4c.png
-│  │  ├─ locked_5c.png
-│  │  └─ locked_6c.png
-│  └─ Lands_d1/
-│     ├─ locked_1d.png
-│     ├─ locked_2d.png
-│     ├─ locked_3d.png
-│     ├─ locked_4d.png
-│     ├─ locked_5d.png
-│     └─ locked_6d.png
+│  └─ bg_ground.png
+│
+├─ farm/                       # 代码实际加载的目录（全小写，模板写在 Soil_Data.csv）
+│  ├─ crop/                    # 作物三阶段：longan-01.png / -02 / -03 …
+│  ├─ lands_a1/                # 正常   locked_1a.png … locked_6a.png
+│  ├─ lands_b1/                # 未解锁 locked_1b.png … locked_6b.png
+│  ├─ lands_c1/                # 缺肥   locked_1c.png … locked_6c.png
+│  └─ lands_d1/                # 缺水   locked_1d.png … locked_6d.png
+│
+├─ datas/
+│  ├─ Crop_Data.csv      # 静态配置表，见 datas/README.md
+│  └─ …
 │
 └─ Textures/
    ├─ Items/

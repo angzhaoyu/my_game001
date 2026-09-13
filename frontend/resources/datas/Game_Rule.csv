@@ -1,0 +1,21 @@
+﻿参数,值,说明
+totalPlots,24,土地总数（lands_1…lands_N × 每行块数）
+plotsPerRow,6,每行土地块数，也是同一列土块图片的张数
+rows,4,土地行数
+initialUnlocked,1,新号默认解锁块数
+initialFertility,70,初始肥力（仅兜底显示）
+initialSoilHealth,70,初始土壤健康（仅兜底显示）
+initialMoisture,70,初始湿度（仅兜底显示）
+dailyPlantLimit,3,每块地每天最多播种次数
+waterPerUse,5,单次浇水增加的湿度
+waterMaxTimes,10,浇水一次可提交的最大次数
+moistureDrainPerHour,6,自然失水（湿度/小时），用于两次快照间的平滑显示
+dailyNetIncomeCap,100,单块地每日净收益上限（金币）
+soilAlertGap,15,土块换图阈值：低于作物需求这么多点时切成缺水/缺肥图
+baseYield,10,基础成熟产量
+initialQuality,60,初始品质
+stageBaseDivisor,1.2,阶段时长系数（预计剩余时间用）
+baseExp,100,1 级升到 2 级所需经验
+expGrowth,1.25,每级经验增长倍率
+maxLevel,24,等级上限
+initialCoins,100,新号初始金币

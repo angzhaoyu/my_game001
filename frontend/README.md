@@ -13,11 +13,13 @@ assets/
 
 - `login` 场景 Canvas 挂 `LoginMain`；微信环境会自动调用 `wx.login`。
 - `farm` 场景 Canvas 挂 `GameRoot`；完整节点层级、土地预制体与各面板见 `scenes/farm.scene.md`。
-- 土地用**预制体**（建议 `assets/resources/farm/prefabs/LandPlot.prefab`，挂 `LandPlot.ts`）；
-  同一列有 6 张土块图（`locked_1a`…`locked_6a` 等），不要遗漏。
+- 土地用**预制体**（建议 `assets/resources/farm/prefabs/LandPlot.prefab`）：**预制体不挂脚本**，
+  同一列 6 张土块图（`locked_1a`…`locked_6a`）由 `lands` 上的 `LandView` 按列号换图；
+  缺水 / 缺肥也靠换图表达，不再有 `fx_dry` / `fx_lowfert` 动画节点。
 - 所有节点、动画、进度条、面板都在 Cocos 里搭好，代码只负责切 `active` / 换图 / 填字 / 播 `Animation`。
-- 可微调的参数（缺肥缺水阈值、土块贴图路径模板、浇水次数上限等）都在组件属性上，
-  属性检查器里直接改即可，改代码不是必须。
+- 可微调的参数（换图阈值、土块贴图路径模板、作物图路径、浇水次数上限等）都在 `LandView` /
+  `SoilInfoPanel` 组件属性上，属性检查器里直接改即可；静态数值表在 `resources/datas/*.csv`，
+  见 `resources/datas/README.md`。
 
 ## API 地址
 
@@ -56,9 +58,12 @@ assets/
 
 ## 配置与测试数据
 
-- `/game/bootstrap` 下发物品、商店、作物、肥料、药品、土地、数值、季节与天气配置；
+- `resources/datas/*.csv` 是客户端的静态配置表（作物 / 肥料 / 药品 / 土地 / 全局数值 / 土块状态 /
+  品质 / 季节 / 天气）。启动时 `loadResourceTables()` 读一次，之后 UI 只引用表格；
+- `/game/bootstrap` 下发物品、商店、作物、肥料、药品、土地、数值、季节与天气配置，
+  到达后**覆盖同名表**（服务端始终权威，表里数值过期也不会算错钱）；
 - 季节 / 天气 / 温度由服务端随快照的 `world` 字段下发，客户端只显示（WeatherHud 三个 Label，不做动画）；
-- `farm/config/*` 是运行时镜像与展示算法，不再生成初始背包；
+- `farm/config/*` 是表格读取器与展示算法（数值都在 `resources/datas/*.csv`），不再生成初始背包；
 - 客户端已移除初始背包生成函数；
 - 测试账号/初始物品运行 `backend` 的 `seed-demo` 创建。
 

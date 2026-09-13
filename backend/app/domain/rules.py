@@ -167,7 +167,8 @@ def growth_context(crop: CropDef, plot: Plot, world: Dict[str, Any]) -> GrowthCo
     context.base_growth_per_minute = base_growth_per_minute(crop, plot.stage)
     context.growth_per_minute = context.base_growth_per_minute * context.final_multiplier
 
-    # 缺肥 / 缺水提示阈值：低于目标 10 点显示（可在 LAND_RULES 调整，前端同一数值绘制区间）
+    # 缺肥 / 缺水提示阈值：低于作物需求这么多点才提示（LAND_RULES 可调；
+    # 前端读同一数值 catalog.land.fertilityAlertGap 决定什么时候换 soil 贴图）
     fertility_gap = float(LAND_RULES.get("fertilityAlertGap", 10))
     moisture_gap = float(LAND_RULES.get("moistureAlertGap", 10))
     context.low_moisture = plot.moisture < crop.humidity[0] - moisture_gap

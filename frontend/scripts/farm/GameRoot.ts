@@ -23,6 +23,8 @@ import { ItemPickerPanel } from './ui/ItemPickerPanel';
 import { WeatherHud } from './ui/WeatherHud';
 import { SessionStore } from '../core/auth/SessionStore';
 import { applyRemoteCatalog } from '../core/game/RemoteCatalog';
+import { loadResourceTables } from './ui/Assets';
+import { findChild } from './ui/NodeUtils';
 import { applyWorldSnapshot } from './config/WeatherConfig';
 import { ApiError } from '../core/network/HttpClient';
 import type { GameCommandType, GameSnapshot } from '../core/network/Contracts';
@@ -80,6 +82,8 @@ export class GameRoot extends Component {
       return;
     }
 
+    // 静态定义来自 resources/datas/*.csv（服务端 catalog 到达后覆盖）
+    await loadResourceTables();
     this.bindSceneNodes();
     this.unsubscribeSnapshot = gameSync.onSnapshot(snapshot => this.applySnapshot(snapshot));
     cocosGame.on(Game.EVENT_SHOW, this.onAppShow, this);
@@ -209,31 +213,21 @@ export class GameRoot extends Component {
     });
   }
 
-  private findNode(root: Node | null, name: string): Node | null {
-    if (!root) return null;
-    if (root.name === name) return root;
-    for (const child of root.children) {
-      const found = this.findNode(child, name);
-      if (found) return found;
-    }
-    return null;
-  }
-
   private bindSceneNodes() {
     const root = this.node.scene || this.node;
-    const goldNode = this.goldLabelNode || this.findNode(root, 'CoinsLabel') || this.findNode(root, 'gold_hud');
+    const goldNode = this.goldLabelNode || findChild(root, 'CoinsLabel', 'gold_hud');
     this.goldLabel = labelOf(goldNode);
-    this.levelLabel = labelOf(this.findNode(root, 'LevelLabel'));
-    this.diamondsLabel = labelOf(this.findNode(root, 'DiamondsLabel'));
-    this.energyLabel = labelOf(this.findNode(root, 'EnergyLabel'));
+    this.levelLabel = labelOf(findChild(root, 'LevelLabel'));
+    this.diamondsLabel = labelOf(findChild(root, 'DiamondsLabel'));
+    this.energyLabel = labelOf(findChild(root, 'EnergyLabel'));
 
-    const toastNode = this.toastNode || this.findNode(root, 'Toast');
+    const toastNode = this.toastNode || findChild(root, 'Toast');
     if (toastNode) this.toast = toastNode.getComponent(Toast) || toastNode.addComponent(Toast);
 
     const action = (type: GameCommandType, payload: Record<string, unknown>) => this.executeAction(type, payload);
 
     // ---- 土地 ----
-    const lands = this.landsNode || this.findNode(root, 'lands');
+    const lands = this.landsNode || findChild(root, 'lands');
     if (lands) {
       this.landView = lands.getComponent(LandView) || lands.addComponent(LandView);
       this.landView.farm = this.farm;
@@ -242,32 +236,28 @@ export class GameRoot extends Component {
       this.landView.onToast = (message, duration) => this.toast?.show(message, duration);
       this.landView.onAction = action;
       this.landView.now = () => gameSync.serverNow();
-      this.landView.configureToolLayers(
-        this.findNode(root, 'ToolCursorLayer'),
-        this.findNode(root, 'ToolEffectLayer'),
-      );
+      this.landView.configureToolCursor(findChild(root, 'ToolCursorLayer'));
       // 面板注入（全部是 Cocos 场景节点上的组件）
-      this.soilInfo = componentOf(this.soilInfoNode || this.findNode(root, 'SoilInfoPanel'), SoilInfoPanel);
-      this.waterPrompt = componentOf(this.waterPromptNode || this.findNode(root, 'WaterPrompt'), WaterPrompt);
+      this.soilInfo = componentOf(this.soilInfoNode || findChild(root, 'SoilInfoPanel'), SoilInfoPanel);
+      this.waterPrompt = componentOf(this.waterPromptNode || findChild(root, 'WaterPrompt'), WaterPrompt);
       this.fertilizePanel = componentOf(
-        this.fertilizePanelNode || this.findNode(root, 'FertilizePanel'), FertilizePanel);
-      this.seedPanel = componentOf(this.seedPanelNode || this.findNode(root, 'SeedPanel'), ItemPickerPanel);
+        this.fertilizePanelNode || findChild(root, 'FertilizePanel'), FertilizePanel);
+      this.seedPanel = componentOf(this.seedPanelNode || findChild(root, 'SeedPanel'), ItemPickerPanel);
       this.medicinePanel = componentOf(
-        this.medicinePanelNode || this.findNode(root, 'MedicinePanel'), ItemPickerPanel);
+        this.medicinePanelNode || findChild(root, 'MedicinePanel'), ItemPickerPanel);
       this.landView.soilInfoPanel = this.soilInfo;
       this.landView.waterPrompt = this.waterPrompt;
       this.landView.fertilizePanel = this.fertilizePanel;
       this.landView.seedPicker = this.seedPanel;
       this.landView.medicinePicker = this.medicinePanel;
       this.landView.openShop = () => this.openShop();
-      this.landView.isShopOpen = () => !!this.shop?.isOpen;
     }
 
-    const weatherNode = this.weatherHudNode || this.findNode(root, 'WeatherHud');
+    const weatherNode = this.weatherHudNode || findChild(root, 'WeatherHud');
     this.weatherHud = componentOf(weatherNode, WeatherHud);
 
     // ---- 左栏工具 ----
-    const leftBar = this.leftBar || this.findNode(root, 'LeftBar') || this.findNode(root, 'LefttBar');
+    const leftBar = this.leftBar || findChild(root, 'LeftBar', 'LefttBar');
     if (leftBar) {
       this.bindToolButton(leftBar, 'Water', 'water');
       this.bindToolButton(leftBar, 'Fertilizer', 'fert');
@@ -276,7 +266,7 @@ export class GameRoot extends Component {
     }
 
     // ---- 背包 / 商店 ----
-    const backpackNode = this.backpackPanelNode || this.findNode(root, 'BackpackPanel');
+    const backpackNode = this.backpackPanelNode || findChild(root, 'BackpackPanel');
     if (backpackNode) {
       this.backpack = backpackNode.getComponent(BackpackPanel) || backpackNode.addComponent(BackpackPanel);
       this.backpack.inventory = this.inventory;
@@ -285,7 +275,7 @@ export class GameRoot extends Component {
       this.backpack.onAction = action;
     }
 
-    const shopNode = this.shopPanelNode || this.findNode(root, 'ShopPanel');
+    const shopNode = this.shopPanelNode || findChild(root, 'ShopPanel');
     if (shopNode) {
       this.shop = shopNode.getComponent(ShopPanel) || shopNode.addComponent(ShopPanel);
       this.shop.inventory = this.inventory;
@@ -297,11 +287,11 @@ export class GameRoot extends Component {
     }
 
     this.bindOpenButton(
-      this.backpackButton || this.findNode(root, 'BackpackBtn') || this.findNode(root, 'btn_open_btn'),
+      this.backpackButton || findChild(root, 'BackpackBtn', 'btn_open_btn'),
       () => { if (this.shop?.isOpen) this.shop.close(); this.backpack?.open(); },
     );
     this.bindOpenButton(
-      this.shopButton || this.findNode(root, 'ShopBtn') || this.findNode(root, 'btn_shop_btn'),
+      this.shopButton || findChild(root, 'ShopBtn', 'btn_shop_btn'),
       () => this.openShop(),
     );
   }

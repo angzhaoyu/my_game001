@@ -339,9 +339,9 @@ LAND_RULES: Dict[str, Any] = {
     "waterMaxTimes": 10,
     "moistureDrainPerHour": 6,
     "dailyNetIncomeCap": 100,
-    # 缺肥 / 缺水提示阈值：低于目标 10 点显示缺肥（可在 Cocos 端用同一数值绘制区间）
-    "fertilityAlertGap": 10,
-    "moistureAlertGap": 10,
+    # 缺肥 / 缺水提示阈值：低于作物需求 15 点才提示（客户端换 soil 贴图，不再做 fx 动画）
+    "fertilityAlertGap": 15,
+    "moistureAlertGap": 15,
     "level": {"baseExp": 100, "expGrowth": 1.25, "maxLevel": 24},
 }
 

@@ -83,7 +83,7 @@ Base URL：`https://<domain>/api/v1`。请求/响应 JSON，写游戏接口需 `
 | `pest` / `disease` | `{level,status,onsetAt}`，`status` 为 `NONE`/`ACTIVE` |
 | `activeFertilizers` / `activeMedicines` | 生效中的肥料与药品（含剩余分钟） |
 | `growthPerMinute` / `progress` | 仅供进度条预览的成长速度 |
-| `lowMoisture` / `lowFertility` | 缺水 / 缺肥提示（低于目标 10 点） |
+| `lowMoisture` / `lowFertility` | 缺水 / 缺肥提示（低于作物需求 15 点，阈值 = `land.soilAlertGap`，前端据此换 soil 贴图） |
 | `dailyPlantCount` / `dailyPlantLimit` | 今日播种次数 / 上限（3） |
 
 ### `POST /game/commands`

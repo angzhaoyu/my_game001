@@ -1,11 +1,19 @@
 /**
- * ui/ItemPickerPanel.ts —— 通用物品选择框（种子 / 药品都复用它）
+ * ui/ItemPickerPanel.ts —— 通用物品选择框（种子 / 药品共用）
  *
- * 布局在 Cocos 里搭好：ScrollView/view/content 下预置若干 Cell 预制体实例，
- * 代码只负责填入图标/名称/数量并绑定点击，数量不足时用模板克隆补齐。
+ * 布局在 Cocos 里搭好：`ScrollView/view/content` 下预置若干 Cell，代码只填图标 / 名称 / 副标题
+ * 并绑定点击；格子不够时克隆第一个当模板（不新建布局节点）。
+ *
+ * ```text
+ * Panel
+ * ├─ lb_title / lb_hint      Label
+ * ├─ ScrollView/view/content Node   每格：icon(Sprite) + lb_name(Label) + lb_count(Label)
+ * └─ btn_close               Button
+ * ```
  */
-import { _decorator, Component, Label, Layout, Node, ScrollView, Sprite } from 'cc';
-import { applySprite } from './Assets';
+import { _decorator, Component, Label, Node } from 'cc';
+import { applySprite, itemPaths } from './Assets';
+import { bindClick, closeOnOutsideTouch, findChild, findLabel, findSprite, renderCells, showOnTop } from './NodeUtils';
 
 const { ccclass, property } = _decorator;
 
@@ -27,14 +35,11 @@ export class ItemPickerPanel extends Component {
   isOpen = false;
   onPick: (key: string) => void = () => {};
 
-  onLoad() {
-    this.node.on(Node.EventType.TOUCH_END, (event: any) => {
-      if (event?.target === this.node) this.close();
-    });
-    if (this.closeButton) {
-      this.closeButton.off(Node.EventType.TOUCH_END);
-      this.closeButton.on(Node.EventType.TOUCH_END, () => this.close());
-    }
+  onLoad(): void {
+    closeOnOutsideTouch(this, () => this.close());
+    this.contentNode = this.contentNode || findChild(this.node, 'content', 'contentNode');
+    const close = this.closeButton || findChild(this.node, 'btn_close', 'closeButton');
+    bindClick(close, () => this.close());
     this.node.active = false;
   }
 
@@ -42,10 +47,10 @@ export class ItemPickerPanel extends Component {
     this.onPick = onPick;
     this.isOpen = true;
     this.node.active = true;
-    this.node.setSiblingIndex(this.node.parent ? this.node.parent.children.length - 1 : 0);
+    showOnTop(this.node);
     if (this.titleLabel) this.titleLabel.string = title;
     if (this.hintLabel) this.hintLabel.string = hint;
-    this.render(rows);
+    renderCells(this.contentNode, rows.length, (cell, index) => this.bindCell(cell, rows[index]));
   }
 
   close(): void {
@@ -53,37 +58,12 @@ export class ItemPickerPanel extends Component {
     this.node.active = false;
   }
 
-  private render(rows: PickerRow[]): void {
-    const content = this.contentNode;
-    if (!content) return;
-    const children = content.children;
-    children.forEach((child, index) => {
-      setActive(child, index < rows.length);
-      if (index < rows.length) this.bindCell(child, rows[index]);
-    });
-    const template = children.length > 0 ? children[0] : null;
-    for (let index = children.length; index < rows.length; index++) {
-      if (!template) break;
-      const cell = template.clone();
-      cell.active = true;
-      content.addChild(cell);
-      this.bindCell(cell, rows[index]);
-    }
-    const layout = content.getComponent(Layout) || content.addComponent(Layout);
-    layout.updateLayout();
-    const scroll = content.parent?.parent?.getComponent(ScrollView);
-    if (scroll) scroll.scrollToTop(0);
-  }
-
   private bindCell(cell: Node, row: PickerRow): void {
     const icon = findSprite(cell, 'icon');
-    if (icon) applySprite(icon, [
-      `textures/items/${row.icon}/spriteFrame`,
-      `farm/crop/${row.icon}/spriteFrame`,
-    ]);
-    const name = findLabel(cell, 'lb_name');
+    if (icon) applySprite(icon, itemPaths(row.icon));
+    const name = findLabel(cell, 'lb_name', 'name');
     if (name) name.string = row.name;
-    const sub = findLabel(cell, 'lb_count') || findLabel(cell, 'lb_sub');
+    const sub = findLabel(cell, 'lb_count', 'lb_sub', 'sub');
     if (sub) sub.string = row.sub;
     cell.off(Node.EventType.TOUCH_END);
     if (!row.disabled) {
@@ -94,20 +74,4 @@ export class ItemPickerPanel extends Component {
       });
     }
   }
-}
-
-function setActive(node: Node | null, active: boolean): void {
-  if (node && node.isValid && node.active !== active) node.active = active;
-}
-
-function findLabel(root: Node, name: string): Label | null {
-  const direct = root.getChildByName(name);
-  if (direct) return direct.getComponent(Label) || direct.getComponentInChildren(Label);
-  return root.getComponentInChildren(Label);
-}
-
-function findSprite(root: Node, name: string): Sprite | null {
-  const direct = root.getChildByName(name);
-  if (direct) return direct.getComponent(Sprite) || direct.getComponentInChildren(Sprite);
-  return root.getComponentInChildren(Sprite);
 }
