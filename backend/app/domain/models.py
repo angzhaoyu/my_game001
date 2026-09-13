@@ -60,7 +60,7 @@ class ActiveMedicine:
 
 @dataclass
 class Plot:
-    """单块土地。字段与文档 3.1 一致。"""
+    """单块土地持久化状态；对外快照字段见 docs/API.md。"""
 
     id: int
     unlocked: bool = False
@@ -107,7 +107,7 @@ class Plot:
     last_watered_at_ms: int = 0
 
     def reset_cycle(self) -> None:
-        """清除本轮作物相关的全部临时数据（文档 13.2）。土地长期状态保留。"""
+        """清除本轮作物相关的全部临时数据；土地长期状态与当日统计保留。"""
         self.crop_id = None
         self.stage = 0
         self.stage_growth = 0.0
@@ -137,7 +137,7 @@ class Plot:
 
 @dataclass
 class DailyEconomy:
-    """当天的经济统计（文档 14）。跨天由引擎清零。"""
+    """当天的经济统计；跨天由引擎清零。"""
 
     day_index: int = 0
     seed_cost: int = 0

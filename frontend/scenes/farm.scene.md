@@ -3,7 +3,7 @@
 > 总原则：**先在 Cocos Creator 里把节点、动画、进度条、面板全部搭好，土地代码只负责「唤醒 / 切图 / 填字」，动画由预制体负责。**
 > 代码不再在运行时创建 UI 节点；列表类单元格用编辑器预置的节点（不够时克隆第一个作为模板）。
 >
-> 需要调的参数（阈值、路径模板、次数上限等）都做成了组件上的 `@property`，可以在属性检查器里直接改。
+> 土地显示阈值、路径和进度条宽度在 Canvas 的 GameRoot 上调整；次数上限等权威数值由 CSV 下发，不是任意组件属性。
 
 ---
 
@@ -11,11 +11,11 @@
 
 | 约定 | 说明 |
 |---|---|
-| 命名 | 节点名与下表完全一致；代码按名字查找，找不到时会 `console.warn` 并跳过（不会报错崩溃） |
+| 命名 | 节点名与下表完全一致；土地和 SoilInfoPanel 按名查找；其余组件还需绑定编辑器属性（见下方）。缺失节点可能被静默跳过，不能依赖控制台一定报警 |
 | 动画 | 土块 `fx_*` 根节点只切 `active`，动画放子 `Sprite`；详见土地预制体约定 |
 | 进度条 | `bg` + `fill`（Sprite）。`fill.fillRange` 为 0~1；如果组件上填了 `growthFillMaxWidth`，则改为按 width 缩放 |
 | 点击外部关闭 | 面板根节点铺满全屏，根节点自身接收 `TOUCH_END`（`event.target === 根节点`）时关闭 |
-| 土地图片 | 同一列有 6 张图：`farm/lands_{state}1/locked_{col}{state}`（`state` 取 a/b/c/d，`col` 取 1..6），**不要遗漏任何一列** |
+| 土地图片 | 每种状态有 6 张位置图：`farm/lands_{state}1/locked_{col}{state}`（`state` 取 a/b/c/d，`col` 取 1..6），**不要遗漏任何一列** |
 
 土块状态与图片后缀：
 
@@ -23,8 +23,8 @@
 |---|---|---|
 | 正常 | `a` | 默认 |
 | 未解锁 | `b` | `plot.unlocked === false` |
-| 缺肥 | `c` | `fertility < 目标肥力 - fertilityAlertGap`（默认 10，可在预制体上改） |
-| 缺水 | `d` | `moisture < 作物 Hmin - moistureAlertGap`（默认 10） |
+| 缺肥 | `c` | `fertility < 目标肥力 - fertilityAlertGap`（默认 15，可在 Canvas 的 GameRoot 上覆盖） |
+| 缺水 | `d` | `moisture < 作物 Hmin - moistureAlertGap`（默认 15） |
 
 ---
 
@@ -138,6 +138,22 @@ Canvas（挂载 GameRoot.ts）
 ```
 
 ---
+
+### 编辑器绑定不可省略
+
+`GameRoot` 可按名称找到面板并取得组件，但不会自动填充下面这些组件的 `@property`。应先在编辑器挂好组件，再拖入引用；仅有同名节点不代表已经绑定。
+
+| 组件 | 属性 → 节点/组件 |
+|---|---|
+| `WaterPrompt` | `timesRoot` → `Panel/times`；`confirmButton/closeButton` → `btn_confirm/btn_close`；`hintLabel` → `lb_hint` 的 Label |
+| `FertilizePanel` | `topContent/bottomContent` → 上下两个 ScrollView 的 content；`appendToggle` → `toggle_append`；`shopButton/confirmButton/closeButton` → `btn_shop/btn_confirm/header/CloseBth`；`titleLabel/hintLabel` → `header/Title/lb_hint` 的 Label |
+| `ItemPickerPanel`（SeedPanel、MedicinePanel） | `contentNode` → `ScrollView/view/content`；`closeButton` → `btn_close`；`titleLabel/hintLabel` → `lb_title/lb_hint` 的 Label |
+| `WeatherHud` | `seasonLabel/weatherLabel/temperatureLabel/dayLabel` → `lb_season/lb_weather/lb_temp/lb_day` 的 Label；dayLabel 可不绑 |
+
+- 列表 content 内预置模板单元格及其图标/名称等子节点，不能只有空容器。
+- 场景初始化时让上述选择面板先处于 active，由各组件的 `onLoad` 自行隐藏；当前部分面板在首次延迟 `onLoad` 时会隐藏自身，不应在未经验证时改成全程 inactive 后才初始化。
+- SoilInfoPanel 的同名 Label 会自动查找；`btn_medicine` 虽是可选节点，但若删掉且不另设入口，玩家就无法从该面板选药。
+- LandView 是普通逻辑类：不能拖到 lands 或预制体挂载；LandPlot.ts 已删除，不能留下 Missing Script。
 
 ## 2. LandPlot 土地预制体
 

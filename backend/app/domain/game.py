@@ -93,7 +93,7 @@ class GameEngine:
         return True
 
     def settle_minute(self, state: GameAggregate, timestamp_ms: int) -> None:
-        """文档第十五章：一次完整的分钟结算。"""
+        """一次完整的分钟结算；玩法说明见 docs/GAME_RULES.md。"""
         world = world_state(state.world_seed_value(), timestamp_ms)
         day = int(world["dayIndex"])
         if state.daily.day_index != day:
@@ -467,7 +467,7 @@ class GameEngine:
         quantity = max(0, int(plot.harvest_quantity))
         grade, multiplier = quality_grade(plot.quality_score)
         income = int(math.floor(quantity * crop.base_price * multiplier))
-        # 单块土地每日净收益硬上限（文档第十二章）
+        # 单块土地每日净收益硬上限（由 LAND_RULES 下发）
         cap = float(LAND_RULES["dailyNetIncomeCap"])
         if plot.daily_net_income + income > cap:
             income = max(0, int(cap - plot.daily_net_income))

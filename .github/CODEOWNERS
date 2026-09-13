@@ -6,4 +6,6 @@
 /frontend/scripts/core/ @client
 /frontend/scripts/farm/ui/ @client @ui
 /frontend/resources/ @art
+# 数据表规则需覆盖上面的通用美术归属（最后匹配的规则生效）。
+/frontend/resources/datas/ @game-design @backend
 /docs/ @tech-lead

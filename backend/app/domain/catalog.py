@@ -317,7 +317,7 @@ def growth_multiplier_for_level(level: float, table: List[Tuple[int, int, float]
 
 
 def event_level_for_age(age_minutes: float) -> float:
-    """按事件持续时间计算等级（文档第九章曲线）。"""
+    """按 event_levels.csv 的事件持续时间曲线计算等级。"""
     for row in _EVENT_LEVELS:
         if age_minutes < row["end"]:
             return min(100.0, row["base"] + row["rate"] * (age_minutes - row["start"]))

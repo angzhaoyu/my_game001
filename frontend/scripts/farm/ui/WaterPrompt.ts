@@ -2,7 +2,7 @@
  * ui/WaterPrompt.ts —— 浇水次数选择框
  *
  * 节点在 Cocos 里搭好：次数按钮（btn_1…btn_5）由编辑器摆放，代码只读取子节点
- * 并绑定点击。确认后进入「浇水光标跟随鼠标」状态，碰到土块即浇水并唤醒土块动画。
+ * 并绑定点击。确认后进入「浇水光标跟随鼠标」状态，点击土块发送浇水命令，成功后唤醒土块动画。
  */
 import { _decorator, Button, Component, Label, Node } from 'cc';
 import { LAND } from '../config/LandConfig';

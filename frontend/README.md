@@ -57,7 +57,7 @@ assets/
 
 Cocos UI 脚本仍应在真实 Creator 工程中编译并做真机测试。弱网至少覆盖：高延迟、请求超时、响应丢失、断网恢复、切后台、多设备同时操作、快速连点。
 
-本次源码整理将 `FertilizerConfig.ts`、`MedicineConfig.ts` 合并至 `ItemConfig.ts`，`Assets.ts` 合并至 `Ui.ts`；同步到已有 Cocos 工程时移除这三个旧脚本及对应 `.meta`，并同步引用它们的脚本。组件类名及场景挂载不变；自定义扩展如使用旧导入路径，也需同步更新。
+本次源码整理将 `FertilizerConfig.ts`、`MedicineConfig.ts` 合并至 `ItemConfig.ts`，`Assets.ts` 合并至 `Ui.ts`；同步到已有 Cocos 工程时移除这三个旧脚本及对应 `.meta`，并同步引用它们的脚本。这三个工具/配置文件不涉及组件挂载；土地组件的挂载方式已变更，见下方迁移说明。自定义扩展如使用旧导入路径，也需同步更新。
 
 土地挂载与新节点迁移以 [farm 场景契约](scenes/farm.scene.md#2-landplot-土地预制体) 为准：只有 Canvas 挂 GameRoot，lands 和土地预制体不挂土地脚本。CSV 编辑与后端部署路径见 [配置表说明](resources/datas/README.md)。
 

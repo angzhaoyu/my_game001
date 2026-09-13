@@ -167,7 +167,7 @@ def growth_context(crop: CropDef, plot: Plot, world: Dict[str, Any]) -> GrowthCo
     context.base_growth_per_minute = base_growth_per_minute(crop, plot.stage)
     context.growth_per_minute = context.base_growth_per_minute * context.final_multiplier
 
-    # 缺肥 / 缺水提示阈值：低于目标 10 点显示（可在 LAND_RULES 调整，前端同一数值绘制区间）
+    # 缺肥 / 缺水提示阈值由 LAND_RULES 下发（当前 CSV 为 15 点；缺字段时兼容旧值 10）
     fertility_gap = float(LAND_RULES.get("fertilityAlertGap", 10))
     moisture_gap = float(LAND_RULES.get("moistureAlertGap", 10))
     context.low_moisture = plot.moisture < crop.humidity[0] - moisture_gap
@@ -245,7 +245,7 @@ def event_level_delta(previous_age: float, current_age: float) -> float:
 
 
 def appear_chance(crop: CropDef, plot: Plot, world: Dict[str, Any], target: str) -> float:
-    """文档第九章：基础 0.02%/分钟 + 环境风险 + 天气风险，上限 0.15%/分钟。"""
+    """病虫出现概率：基础概率 + 环境风险 + 天气风险，上限取 GROWTH_RULES。"""
     base = float(GROWTH_RULES["pestBaseChance"] if target == "pest" else GROWTH_RULES["diseaseBaseChance"])
     low, high = crop.temp
     temperature = float(world["temperature"])

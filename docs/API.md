@@ -83,7 +83,7 @@ Base URL：`https://<domain>/api/v1`。请求/响应 JSON，写游戏接口需 `
 | `pest` / `disease` | `{level,status,onsetAt}`，`status` 为 `NONE`/`ACTIVE` |
 | `activeFertilizers` / `activeMedicines` | 生效中的肥料与药品（含剩余分钟） |
 | `growthPerMinute` / `progress` | 仅供进度条预览的成长速度 |
-| `lowMoisture` / `lowFertility` | 缺水 / 缺肥提示（低于目标 10 点） |
+| `lowMoisture` / `lowFertility` | 服务端成长上下文提示：湿度低于作物下限、肥力低于目标超过配置差值（默认 15）；空地/成熟地返回 false。客户端土壤贴图另按当前值及 GameRoot 显示阈值判定 |
 | `dailyPlantCount` / `dailyPlantLimit` | 今日播种次数 / 上限（3） |
 
 ### `POST /game/commands`
@@ -113,12 +113,10 @@ Base URL：`https://<domain>/api/v1`。请求/响应 JSON，写游戏接口需 `
 
 `quantity` 必须为 1-99。成功返回更新后的完整玩家快照（通常不重复 catalog）、`message`、`commandId`。
 
-#### 数值系统要点（v1.10）
+#### 玩法与数值边界
 
-- 1 分钟 = 1 次服务端结算；良好条件约 5 分钟成熟，无最佳肥料约 6 分钟，最差不超过 120 分钟。
-- 每块土地每天最多播种 3 次；单块土地每日净收益硬上限 100 金币。
-- 收获按 `floor(产量 × 基础售价 × 品质倍率)` 直接结算金币（文档 §12/§13），果实物品保留在目录中供后续扩展。
-- 季节 / 天气 / 温度由服务端按「世界种子 + 现实时间」确定性计算，离线补算结果一致，不需要客户端参与。
+玩法、收益上限和最差成熟时间例外统一见 [玩法说明](GAME_RULES.md)，不在 API 文档重复维护。
+`harvest` 直接入账金币；实际入账受单地当日净收益剩余额度限制，不能只用产量乘售价推断到账金额。
 
 ## 健康检查
 
