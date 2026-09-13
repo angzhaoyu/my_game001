@@ -45,7 +45,7 @@ ALLOWED_ORIGINS=<如还发布Web版，填精确域名；否则可空>
 - [ ] 在真实 Cocos Creator 3.8.x 工程完成脚本编译和场景引用；
 - [ ] 所有关键节点用编辑器属性绑定，核对 `farm.scene.md` 节点名；
 - [ ] 资源路径、大小写和 `.meta` 在 Windows/macOS/CI 一致；
-- [ ] `npm run typecheck:core` 通过；
+- [ ] `npm run typecheck` 通过；
 - [ ] 微信开发者工具执行代码质量、包体、性能与真机调试；
 - [ ] 冷启动无缓存、旧缓存、token 过期、账号首次创建均可进入游戏；
 - [ ] API 错误只显示安全消息，可在客服入口复制 requestId（后续 UI 可补）。

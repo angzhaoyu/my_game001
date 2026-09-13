@@ -1,4 +1,4 @@
-# 团队协作约定
+# 开发协作指南
 
 ## 责任边界
 
@@ -32,19 +32,48 @@
 - 网络改动覆盖超时、重试、断网恢复；
 - 一次 PR 聚焦一个功能，纯重构与数值修改尽量分开。
 
+## 新增功能流程
+
+### 玩家操作
+
+普通农场操作复用 `POST /api/v1/game/commands`，不另建路由：
+
+1. 在 [API 契约](API.md) 约定命令、payload、成功结果与错误码。
+2. 更新 `frontend/scripts/core/network/Contracts.ts` 的命令类型及必要的快照类型。
+3. UI 通过 `GameAction` / `onAction` 发送命令，不直接修改金币或背包。
+4. 在 `backend/app/domain/game.py` 实现 `_handle_<命令名>`，补规则测试；幂等、重试、事务复用现有基础层。
+
+已有铲除命令为 `shovel`，不要另建重复的 `remove_crop`。新增有配置依赖的操作时，同步维护服务端目录和前端配置镜像。
+
+### 持久化字段
+
+按顺序更新 `domain/models.py` → 追加 `migrations/NNN_*.sql` → `repositories/mysql.py` 读写 → `domain/serialization.py` 快照 → 前端 contract/投影，并补迁移与兼容测试。
+
+迁移执行器按 `;` 切分语句，SQL 字符串中不要包含分号。只有需永久保存的数据才增加数据库字段，纯 UI 动画不落库。
+
+### 独立系统
+
+好友、排行榜、邮件等独立系统才新增 API/Service，并在 `backend/app/__init__.py` 注册 Blueprint。先约定接口，再由前后端并行实现，最后联调和弱网验收。
+
+分层和公共基础设施职责见 [架构与数据流](ARCHITECTURE.md)；普通玩法开发无需重复实现鉴权、HTTP、同步队列或数据库事务。
+
 ## 本地检查
 
+以下命令从仓库根目录执行，使用已准备好的 Python 环境；若系统提示 externally-managed-environment，请先创建并激活虚拟环境（`python -m venv .venv`，POSIX 下执行 `source .venv/bin/activate`）：
+
 ```bash
+python -m pip install -r backend/requirements-dev.txt
 PYTHONPATH=backend python -m unittest discover -s backend/tests -v
-python -m compileall -q backend/app backend/tests
-cd frontend
-npm ci
-npm run typecheck:core
+python -m ruff check backend
+python -m compileall -q backend/app backend/server.py backend/tests
+(cd frontend && npm ci && npm run typecheck)
 ```
 
-完整 Cocos 脚本还需由真实 Creator 工程编译，因为本仓库没有提交引擎 `cc` 类型与生成资产。
+`PYTHONPATH=backend` 是 POSIX shell 写法；Windows 可先进入 `backend`，执行 `python -m unittest discover -s tests -v`。依赖安装只需首次或依赖更新时执行，Windows 一键启动脚本不会自动安装。
 
-`docs/ci.workflow.yml.example` 提供相同检查的 GitHub Actions 模板。仓库维护者可在具备 `workflows` 权限时将它复制到 `.github/workflows/ci.yml` 以启用自动检查。
+类型检查覆盖 core + farm（含最小 `cc` 声明），但不替代真实 Creator 编译和真机测试。接入与声明排除方式见 [前端说明](../frontend/README.md#检查)。
+
+[CI 模板](ci.workflow.yml.example) 提供自动检查；维护者具备 `workflows` 权限时可复制到 `.github/workflows/ci.yml` 启用。
 
 ## 节点与资源契约
 

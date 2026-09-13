@@ -13,11 +13,7 @@ assets/
 
 - `login` 场景 Canvas 挂 `LoginMain`；微信环境会自动调用 `wx.login`。
 - `farm` 场景 Canvas 挂 `GameRoot`；完整节点层级、土地预制体与各面板见 `scenes/farm.scene.md`。
-- 土地用**预制体**（建议 `assets/resources/farm/prefabs/LandPlot.prefab`，挂 `LandPlot.ts`）；
-  同一列有 6 张土块图（`locked_1a`…`locked_6a` 等），不要遗漏。
-- 所有节点、动画、进度条、面板都在 Cocos 里搭好，代码只负责切 `active` / 换图 / 填字 / 播 `Animation`。
-- 可微调的参数（缺肥缺水阈值、土块贴图路径模板、浇水次数上限等）都在组件属性上，
-  属性检查器里直接改即可，改代码不是必须。
+- 农场 UI 的编辑器搭建原则、可调参数与土地贴图约定统一见 [farm 场景契约](scenes/farm.scene.md)。登录 UI 当前仍由代码创建，见 [login 场景契约](scenes/login.scene.md)。
 
 ## API 地址
 
@@ -43,31 +39,15 @@ assets/
 
 不同 Cocos/微信工具版本的 `ext.json` 格式可能不同；发布前用 `wx.getExtConfigSync()` 打印非敏感配置确认。API 域名必须为 HTTPS 并加入微信公众平台 request 合法域名。
 
-## 弱网行为
+## 同步与配置
 
-- GET 和带 `commandId` 的 POST 最多重试 2 次，指数退避并带随机抖动；
-- 写命令先持久化，再串行发送；响应丢失时重发相同 `commandId`；待确认命令最多保留 6 天（短于服务端默认 7 天幂等记录）；
-- 后端 `stateVersion` 冲突时自动 bootstrap 后重试；
-- 断网缓存只读，不允许客户端金币/背包覆盖服务端；
-- 小游戏回前台会重新 bootstrap 并恢复未确认命令；
-- UI 在单地块/单物品命令等待期间防重复点击。
+同步队列、重试、版本冲突和只读缓存见 [架构说明](../docs/ARCHITECTURE.md#3-网络延迟与响应丢失)。出现“操作已保留”时，以后端确认快照为准，UI 不自行加金币或扣背包。
 
-注意：当出现“操作已保留”提示时，操作是否成功要以后端确认快照为准。不要在 UI 层自行加金币或扣背包。
-
-## 配置与测试数据
-
-- `/game/bootstrap` 下发物品、商店、作物、肥料、药品、土地、数值、季节与天气配置；
-- 季节 / 天气 / 温度由服务端随快照的 `world` 字段下发，客户端只显示（WeatherHud 三个 Label，不做动画）；
-- `farm/config/*` 是运行时镜像与展示算法，不再生成初始背包；
-- 客户端已移除初始背包生成函数；
-- 测试账号/初始物品运行 `backend` 的 `seed-demo` 创建。
+`/game/bootstrap` 下发权威目录与世界状态，`farm/config/*` 仅为运行时镜像与展示算法；测试资产由后端 `seed-demo` 创建，见 [后端说明](../backend/README.md)。
 
 ## 检查
 
-```bash
-npm ci
-npm run typecheck        # = typecheck:core + typecheck:farm
-```
+统一执行命令见 [本地检查](../docs/CONTRIBUTING.md#本地检查)。`npm run typecheck` 包含：
 
 - `typecheck:core`：不依赖 Cocos 的核心层；
 - `typecheck:farm`：包含 `scripts/farm/**` 的 UI 脚本，用仓库自带的最小 `cc` 类型声明

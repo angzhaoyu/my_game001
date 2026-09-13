@@ -1,6 +1,6 @@
 # 数值系统 v1.10 落地说明与偏差记录
 
-本文说明 `farm_game_value_system_final_v1.10.md` 与 `我想实现的.md` 的实现情况，
+本文记录 [数值设计](../farm_game_value_system_final_v1.10.md) 与 [原始交互需求](../我想实现的.md) 的实现差异，
 以及**三处需要你确认的偏差**（都写在最前面）。
 
 ---
@@ -31,7 +31,7 @@
 | 最差环境（湿度 0、肥力 0） | 121 分钟 | ≤ 120（离散分钟取整 +1） |
 
 所以取 **`minGrowthMultiplier = 6.0 / 120 = 0.05`**：5/6 分钟的正常体验完全不变，
-最差情况恰好 120 分钟，满足「最大成熟时间 ≤ 120 分钟」这条硬指标。
+连续时间理论上限为 120 分钟；离散分钟结算实测为 121 分钟，**仍未严格满足 ≤ 120 分钟的指标**，需确认是否接受取整误差。
 如果你想严格保留 0.042，改 `backend/app/domain/catalog.py` 的 `GROWTH_RULES["minGrowthMultiplier"]` 即可，
 但那时最长成熟时间会变成约 143 分钟。
 
@@ -42,8 +42,7 @@
 
 后果：背包「果实」页与商店「果实」分类在日常流程里是空的；果实物品仍保留在目录中
 （图标、后续图鉴/偷取/任务可用）。如果你希望改成「收获 → 果实进背包 → 再去商店卖」，
-只需要把 `backend/app/domain/game.py::_handle_harvest` 里的金币入账换成
-`self._add_item(state, crop.fruit_item_id, quantity, now_ms)`，其余逻辑不用动。
+需要同时调整收获、出售、每日净收益上限、成本归属和相关测试，不能仅替换金币入账。
 
 ### 3. 土地解锁的等级门槛按「行」开放
 
@@ -59,65 +58,15 @@
 
 改 `backend/app/domain/catalog.py` 的 `PLOTS_PER_LEVEL` 与 `LAND_UNLOCK` 即可调整。
 
----
+## 实现约定
 
-## 二、后端实现清单
+- 病虫害等级按曲线的本分钟增量叠加，避免每分钟重置等级而抹掉药效；自然发展时与曲线一致。
+- 时间、世界确定性、离线补算和事务表职责见 [架构说明](ARCHITECTURE.md)。
+- 前端组件、节点、动画和参数见 [farm 场景契约](../frontend/scenes/farm.scene.md)。
+- 验证命令见 [本地检查](CONTRIBUTING.md#本地检查)；数值验收用例位于 `backend/tests/test_value_system.py`。
 
-| 文件 | 内容 |
-|---|---|
-| `app/domain/catalog.py` | 24 种作物、12 种肥料、6 种药品、土地价格表、季节/天气表、全部数值常量 |
-| `app/domain/world.py` | 季节（48h）/ 天气（6h）/ 基础温度（每天 00:00 UTC）= `f(世界种子, 绝对分钟)` 的确定性函数 |
-| `app/domain/rules.py` | 成长/品质/产量/病虫害的纯公式（结算与展示共用，可单测） |
-| `app/domain/game.py` | 每分钟结算流程（文档第十五章）+ 命令：`unlock_land / plant / water / fertilize / apply_medicine / harvest / shovel / buy_item / sell_item` |
-| `app/domain/models.py` | `Plot`（肥力/湿度/土壤健康/阶段/成长值/病虫害/生效肥料药品/品质/产量/每日统计）、`DailyEconomy` |
-| `app/domain/serialization.py` | 快照增加 `world`、`daily`，地块字段完整下发 |
-| `migrations/002_value_system_v1_10.sql` | 新字段 + `player_actions` + `player_daily_economy`；旧存档作物清空、水肥重置 70 |
-| `tests/test_value_system.py` | 用文档第十六章的验收标准逐条断言（成熟时间、品质五档、产量、播种次数、收益上限、世界确定性） |
+## 迁移注意事项
 
-设计要点：
-
-- **天气不需要落库**。离线补算要重放几千分钟，任何「当前随机结果」都会让重放不一致；
-  改成确定性函数后，服务端无论何时重放都得到同一环境。
-- **事件等级用增量叠加**。文档说等级由 `AgeMinutes` 决定，又说药品能降低等级。
-  如果每分钟把等级重置为曲线值，药效会被立刻抹掉；因此只取曲线的**本分钟增量**叠加，
-  自然发展时与曲线完全一致，用药后从降低后的等级继续上升。
-- **离线最多补算 24 小时**（`MAX_OFFLINE_MINUTES`），24 小时补算实测约 0.03 秒。
-- **操作流水**写入 `player_actions`，**当日经济**写入 `player_daily_economy`（按天保留历史，
-  `prune-commands` 会清理 30 天前的数据）。
-
----
-
-## 三、前端实现清单
-
-| 文件 | 内容 |
-|---|---|
-| `scripts/farm/ui/LandPlot.ts` | 土地预制体组件：切土块图、切作物三阶段、成长进度条、缺水/缺肥/病害/成熟动画、锁与解锁动画、播种次数提醒 |
-| `scripts/farm/ui/LandView.ts` | 装配 24 块地、四种工具、跟随光标、双击开土壤信息框 |
-| `scripts/farm/ui/SoilInfoPanel.ts` | 固定大小 + ScrollView；湿度/肥力/土壤健康进度条 + 作物适宜区间；生效肥料（剩余时间/每分钟释放/是否最佳）与药品；「处理病虫害」按钮 |
-| `scripts/farm/ui/WaterPrompt.ts` | 浇水次数选择（`btn_1`…`btn_5`，名称里带数字） |
-| `scripts/farm/ui/FertilizePanel.ts` | 上半「已选」/ 下半「已有」、追加时间开关、跳转商店（关闭后自动回来） |
-| `scripts/farm/ui/ItemPickerPanel.ts` | 通用选择框，种子与药品复用 |
-| `scripts/farm/ui/WeatherHud.ts` | 季节 / 天气 / 温度三个 Label，不做动画 |
-| `scripts/core/...` | `bootstrap?catalog=0` 轮询刷新（15 秒）、`GameCommandType` 扩展、快照类型扩展 |
-
-**节点、动画、进度条、面板全部在 Cocos 里搭**，代码只做：切 `active`、换 `spriteFrame`、
-填 `Label`、播已经做好的 `Animation`。完整节点层级见 `frontend/scenes/farm.scene.md`。
-
-可调参数都在组件属性上（`LandPlot.fertilityAlertGap` / `moistureAlertGap` / `soilPathPattern`、
-`growthFillMaxWidth`、`SoilInfoPanel.fertilityAlertGap` 等），填 0 表示跟随服务端配置。
-
----
-
-## 四、验收时怎么跑
-
-```bash
-# 后端
-PYTHONPATH=backend python -m unittest discover -s backend/tests -v   # 47 个用例
-PYTHONPATH=backend python -m ruff check backend
-
-# 前端
-cd frontend && npm ci && npm run typecheck        # core + farm（含 UI 脚本）
-```
-
-把脚本合入真实 Cocos 工程时，请**排除 `frontend/typings/` 目录**
-（它只是给 `npm run typecheck` 用的最小 `cc` 类型声明，不参与构建）。
+`backend/migrations/002_value_system_v1_10.sql` 新增地块状态字段、`player_actions` 与 `player_daily_economy`。
+迁移会清空旧存档作物，并把湿度、肥力、土壤健康重置为 70；上线前必须备份并确认影响。
+`prune-commands` 同时清理 30 天前的操作流水与每日经济记录。

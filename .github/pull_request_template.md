@@ -15,7 +15,7 @@
 
 ## 验证
 - [ ] `PYTHONPATH=backend python -m unittest discover -s backend/tests -v`
-- [ ] `cd frontend && npm run typecheck:core`
+- [ ] `cd frontend && npm run typecheck`
 - [ ] Cocos Creator 预览
 - [ ] 微信开发者工具弱网/断网测试
 

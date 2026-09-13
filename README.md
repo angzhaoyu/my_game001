@@ -1,48 +1,30 @@
 # 随心农场 · 微信小游戏工程骨架
 
-这是一个面向微信小游戏上线的 Cocos Creator + Flask + MySQL 农场项目。项目已把原先的客户端整包存档改为**服务端权威命令模型**，并补充微信登录、短期令牌、幂等写入、状态版本、弱网重试、数据库迁移、容器与自动测试。
+Cocos Creator 3.8.x + Flask + MySQL 农场项目，采用服务端权威命令模型：客户端展示快照，服务端负责规则、资产、幂等写入与状态版本。
 
-玩法数值按 `farm_game_value_system_final_v1.10.md` 实现：1 分钟一次结算、季节/天气/温度、单一肥力、最佳肥料、病虫害与药品、品质五档、基础产量 10、每地每天最多播种 3 次、单地每日净收益上限 100 金币。前端按 `我想实现的.md` 的要求：**节点、动画、进度条、面板全部在 Cocos 里搭好，代码只负责唤醒/切图/填字/播动画**，可微调的参数都在组件属性上。
+仓库包含前后端源码、数据库迁移、测试和场景/资源契约，**不包含完整 Cocos 工程与实际美术资源**。
 
-- 场景节点与土地预制体的完整契约：[frontend/scenes/farm.scene.md](frontend/scenes/farm.scene.md)
-- 接口与命令：[docs/API.md](docs/API.md)
+## 快速开始
 
-团队日常开发只需要先看 [Explain.md 的“日常开发怎么分工”](Explain.md#日常开发怎么分工)；不要求每个人理解全部文件。
+1. **后端**：Windows 本地开发双击 `backend/启动游戏服务器.bat`。首次运行前的解释器、依赖、MySQL 要求及测试账号见 [后端说明](backend/README.md)。Docker/生产启动也在该文档。
+2. **前端**：按 [前端接入说明](frontend/README.md) 将脚本和资源接入真实 Cocos 工程，并配置 API 地址。
+3. **检查**：按 [本地检查](docs/CONTRIBUTING.md#本地检查) 运行后端测试和完整 TypeScript 类型检查。
 
-## 快速开始（本地联调）
+## 文档导航
 
-### 1. 启动后端
+| 内容 | 唯一维护入口 |
+|---|---|
+| 分工、新增功能流程、提交与检查 | [开发协作指南](docs/CONTRIBUTING.md) |
+| 分层、幂等、同步、离线结算 | [架构与数据流](docs/ARCHITECTURE.md) |
+| 请求、响应、命令、错误码 | [API 契约](docs/API.md) |
+| 农场节点与土地预制体 | [farm 场景契约](frontend/scenes/farm.scene.md) |
+| 登录节点与当前实现限制 | [login 场景契约](frontend/scenes/login.scene.md) |
+| 图片路径与命名 | [资源清单](frontend/resources/images.md) |
+| 生产配置、弱网验收与回滚 | [微信上线清单](docs/WECHAT_RELEASE.md) |
+| 数值实现偏差与迁移注意事项 | [数值落地记录](docs/VALUE_SYSTEM_NOTES.md) |
 
-Windows 本地开发直接双击：
+## 设计依据
 
-```text
-backend/启动游戏服务器.bat
-```
-
-脚本固定使用 `E:\soft\path\anaconda\envs\yolo_v5\python.exe`，不会创建环境或安装依赖。首次运行只会自动生成配置、迁移数据库并创建测试账号；以后仍然只双击该文件。默认沿用原项目 MySQL 配置 `root / 123456`，密码不同时修改一次 `backend/.env` 即可。
-
-测试账号：`test / test12345 / 大区一 · 电信`。测试数据由后端创建，不存在客户端测试背包。
-
-Docker 和生产启动属于部署方式，见 [backend/README.md](backend/README.md)，普通本地开发不需要执行那些命令。
-
-### 2. 检查
-
-```bash
-PYTHONPATH=backend python -m unittest discover -s backend/tests -v
-cd frontend && npm ci && npm run typecheck
-```
-
-### 3. 接入 Cocos
-
-按 `frontend/README.md` 将 `frontend/scripts`、场景节点与资源放进 Cocos Creator 3.8.x 工程。本地预览默认访问 `http://127.0.0.1:8000/api/v1`；微信构建必须注入真实 HTTPS `apiBaseUrl`。
-
-## 上线前必须完成
-
-- 配置微信小游戏 AppID、服务端 `WECHAT_APP_ID/WECHAT_APP_SECRET`；
-- 将 HTTPS API 域名加入微信公众平台“服务器域名/request 合法域名”；
-- 使用生产随机 `APP_SECRET` 和独立 MySQL 账号，关闭密码登录与 demo seed；
-- 在网关配置 TLS、限流、访问日志与告警；
-- 执行迁移、备份和灰度/回滚演练；
-- 用微信开发者工具测试 2G/高延迟/断网/切后台/重复点击。
-
-完整清单见 [docs/WECHAT_RELEASE.md](docs/WECHAT_RELEASE.md)。
+- [数值系统 v1.10](farm_game_value_system_final_v1.10.md)：保留正式设计；实现与设计的差异统一记录在数值落地记录中。
+- [原始交互需求](我想实现的.md)：保留需求来源；实际节点与接入方法以场景契约为准，不作为功能已全部完成的声明。
+- `frontend/Crop_Data.csv`、`frontend/Fertilizer_Data.csv`：策划参考表；运行时权威配置是 `backend/app/domain/catalog.py`，由 bootstrap 下发。
