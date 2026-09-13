@@ -3,7 +3,7 @@
 客户端只把这些数据用于展示；价格、奖励、成长时间和操作效果始终由服务端再次校验。
 表格统一读取 frontend/resources/datas；客户端通过 bootstrap 获取解析后的权威目录。
 
-数值来源：`farm_game_value_system_final_v1.10.md`。
+配置来源：`frontend/resources/datas/*.csv`；玩法与偏差见 `docs/GAME_RULES.md`。
  - 时间单位统一为现实分钟（1 分钟 = 1 次服务器标准结算）。
  - 只使用单一 `Fertility`，N/P/K 不参与任何计算。
  - 基础成熟产量 BaseYield = 10。

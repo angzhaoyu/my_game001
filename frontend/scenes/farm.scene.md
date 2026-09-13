@@ -218,11 +218,9 @@ LandPlot                             Node（本行是预制体名，实例名为
 
 ---
 
-## 4. 资源清单补充
+## 4. 资源约定
 
-- 作物三阶段图：`<cropId>-01 / -02 / -03`（例如 `longan-01`），种子 `seed_<cropId>`，果实 `fruit_<cropId>`。
-- 化肥图标：`fert_<fertilizerId>`（如 `fert_npk_15`）；药品图标：`med_<medicineId>`（如 `med_fungicide_basic`）。
-- 图标全部放在 `assets/resources/textures/items/` 下；作物图放 `assets/resources/farm/crop/`。
+图片路径和物品命名统一见 [前端资源说明](../README.md#图片与动画资源)，具体作物/肥料/药品 ID 以 [CSV 配置表](../resources/datas/README.md) 为准。
 
 ## 5. 与服务端的关系
 

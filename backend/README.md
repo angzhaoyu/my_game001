@@ -37,7 +37,7 @@ E:\soft\path\anaconda\envs\yolo_v5\python.exe
 - `app/__init__.py`：Flask 应用工厂，生产由 Gunicorn 调用。
 - `app/manage.py`：迁移、测试账号和定期清理命令。
 - 业务分层、事务和权威数据边界见 [架构说明](../docs/ARCHITECTURE.md)。
-- 旧原型表 `users/farm_plots/player_inventory` 不再读写；迁移 v1.10 的存档影响见 [数值落地记录](../docs/VALUE_SYSTEM_NOTES.md#迁移注意事项)。
+- 旧原型表 `users/farm_plots/player_inventory` 不再读写；迁移 v1.10 的存档影响见 [玩法说明](../docs/GAME_RULES.md#验收与迁移注意事项)。
 
 ## 维护命令（普通启动不需要手动执行）
 

@@ -1,4 +1,4 @@
-"""数值系统 v1.10 的验收测试：直接用文档第十六章的验收标准断言。"""
+"""数值系统验收测试：对应 docs/GAME_RULES.md 的验收标准与已知偏差。"""
 from __future__ import annotations
 
 import math

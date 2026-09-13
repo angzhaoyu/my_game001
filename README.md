@@ -14,17 +14,13 @@ Cocos Creator 3.8.x + Flask + MySQL 农场项目，采用服务端权威命令�
 
 | 内容 | 唯一维护入口 |
 |---|---|
-| 分工、新增功能流程、提交与检查 | [开发协作指南](docs/CONTRIBUTING.md) |
-| 分层、幂等、同步、离线结算 | [架构与数据流](docs/ARCHITECTURE.md) |
+| 玩法、数值摘要、待确认事项、存档迁移影响 | [玩法说明](docs/GAME_RULES.md) |
+| 配置表字段、编辑与部署 | [CSV 配置说明](frontend/resources/datas/README.md) |
+| 农场节点、土地预制体、工具交互与旧场景迁移 | [farm 场景契约](frontend/scenes/farm.scene.md) |
+| 登录场景、图片路径、前端接入 | [前端说明](frontend/README.md) |
+| 分工、新增功能、提交与检查 | [开发协作指南](docs/CONTRIBUTING.md) |
+| 分层、同步、离线结算、事务 | [架构说明](docs/ARCHITECTURE.md) |
 | 请求、响应、命令、错误码 | [API 契约](docs/API.md) |
-| 农场节点与土地预制体 | [farm 场景契约](frontend/scenes/farm.scene.md) |
-| 登录节点与当前实现限制 | [login 场景契约](frontend/scenes/login.scene.md) |
-| 图片路径与命名 | [资源清单](frontend/resources/images.md) |
-| 生产配置、弱网验收与回滚 | [微信上线清单](docs/WECHAT_RELEASE.md) |
-| 数值实现偏差与迁移注意事项 | [数值落地记录](docs/VALUE_SYSTEM_NOTES.md) |
+| 生产配置、弱网验收、发布与回滚 | [微信上线清单](docs/WECHAT_RELEASE.md) |
 
-## 设计依据
-
-- [数值系统 v1.10](farm_game_value_system_final_v1.10.md)：保留正式设计；实现与设计的差异统一记录在数值落地记录中。
-- [原始交互需求](我想实现的.md)：保留需求来源；实际节点与接入方法以场景契约为准，不作为功能已全部完成的声明。
-- [CSV 配置表](frontend/resources/datas/README.md)：`frontend/resources/datas` 是唯一配置表来源，后端读取并通过 bootstrap 下发；旧 N/P/K 参考 CSV 已移除。
+数值只在 CSV 中维护，节点只在场景契约中维护；玩法说明不再复制整套表格或节点树。旧需求与旧数值文档已合并，其历史版本保留在 Git 中。

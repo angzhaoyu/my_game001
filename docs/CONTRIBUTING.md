@@ -81,7 +81,7 @@ python -m compileall -q backend/app backend/server.py backend/tests
 
 - 真实 `.scene/.prefab/.meta`（在实际 Cocos 工程中）；
 - `frontend/scenes/*.scene.md`；
-- `frontend/resources/images.md`；
+- `frontend/README.md` 的图片与动画资源约定；
 - 查找该名称/路径的 TypeScript。
 
 推荐逐步将 `GameRoot` 的名字查找替换为编辑器 `@property` 显式引用；过渡期保留兼容查找。
