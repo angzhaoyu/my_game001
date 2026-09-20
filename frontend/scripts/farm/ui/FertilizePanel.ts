@@ -139,7 +139,7 @@ export class FertilizePanel extends Component {
     if (!content) return;
     
     // 检测格子尺寸
-    const layout = content.getComponent(Layout);
+    let layout = content.getComponent(Layout);
     this.cellSize = this.detectCellSize(layout, content);
     if (layout) {
       layout.cellSize = new Size(this.cellSize, this.cellSize);
@@ -157,7 +157,7 @@ export class FertilizePanel extends Component {
       content.addChild(cell);
       this.bindCell(cell, rows[index]);
     }
-    const layout = content.getComponent(Layout) || content.addComponent(Layout);
+    layout = layout || content.addComponent(Layout);
     layout.updateLayout();
     const scroll = content.parent?.parent?.getComponent(ScrollView);
     if (scroll) scroll.scrollToTop(0);
