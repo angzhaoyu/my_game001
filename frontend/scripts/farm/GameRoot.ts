@@ -1,18 +1,18 @@
 /**
- * 农场场景装配层：只负责把 Cocos 场景里已经搭好的节点与脚本绑定起来，
- * 并把服务端快照投影到这些节点上。金币/背包/土地不在客户端修改，服务端是唯一权威。
- *
- * 所有面板、土块、动画都是 Cocos 里的节点；这里只做「取组件 + 注入依赖 + 绑定事件」。
+ * 农场场景装配层：把 Cocos 场景里已经搭好的节点与脚本绑定起来，
+ * 并把服务端快照投影到这些节点上。
  */
 import {
   _decorator, Button, Component, director, Game, game as cocosGame, Label, Node,
-  ResolutionPolicy, Sprite, view,
+  ResolutionPolicy, Sprite, tween, Vec3, view,
 } from 'cc';
 import { InventoryModel } from './data/InventoryModel';
 import { PlayerModel } from './data/PlayerModel';
 import { FarmModel } from './data/FarmModel';
 import { BackpackPanel } from './ui/BackpackPanel';
 import { ShopPanel } from './ui/ShopPanel';
+import { BuyPanel } from './ui/BuyPanel';
+import { SellPanel } from './ui/SellPanel';
 import { Toast } from './ui/Toast';
 import { LandView } from './ui/LandView';
 import type { ToolMode } from './ui/LandView';
@@ -28,22 +28,23 @@ import { ApiError } from '../core/network/HttpClient';
 import type { GameCommandType, GameSnapshot } from '../core/network/Contracts';
 import { gameSync } from '../core/sync/GameSyncService';
 import type { GameActionFeedback } from './GameAction';
+import type { ShopDef, InventoryStack } from './data/ItemData';
 
 const { ccclass, property } = _decorator;
 export const DESIGN_W = 1280;
 export const DESIGN_H = 720;
-/** 轮询间隔：服务端按分钟结算，客户端定期拉取最新快照 */
 const POLL_INTERVAL_SECONDS = 15;
 
 @ccclass('GameRoot')
 export class GameRoot extends Component {
-  // 场景节点（优先拖拽绑定，缺失时按名字查找）
   @property({ type: Node }) public landsNode: Node | null = null;
   @property({ type: Node }) public leftBar: Node | null = null;
   @property({ type: Node }) public backpackButton: Node | null = null;
   @property({ type: Node }) public shopButton: Node | null = null;
   @property({ type: Node }) public backpackPanelNode: Node | null = null;
   @property({ type: Node }) public shopPanelNode: Node | null = null;
+  @property({ type: Node }) public buyPanelNode: Node | null = null;
+  @property({ type: Node }) public sellPanelNode: Node | null = null;
   @property({ type: Node }) public goldLabelNode: Node | null = null;
   @property({ type: Node }) public toastNode: Node | null = null;
   @property({ type: Node }) public weatherHudNode: Node | null = null;
@@ -51,7 +52,7 @@ export class GameRoot extends Component {
   @property({ type: Node }) public waterPromptNode: Node | null = null;
   @property({ type: Node }) public fertilizePanelNode: Node | null = null;
   @property({ type: Node }) public seedPanelNode: Node | null = null;
-  @property({ type: Node }) public medicinePanelNode: Node | null = null;
+  @property({ type: Node }) public pesticidePanelNode: Node | null = null;
 
   private player = new PlayerModel(0);
   private inventory = new InventoryModel();
@@ -64,12 +65,14 @@ export class GameRoot extends Component {
   private toast: Toast | null = null;
   private backpack: BackpackPanel | null = null;
   private shop: ShopPanel | null = null;
+  private buyPanel: BuyPanel | null = null;
+  private sellPanel: SellPanel | null = null;
   private weatherHud: WeatherHud | null = null;
   private soilInfo: SoilInfoPanel | null = null;
   private waterPrompt: WaterPrompt | null = null;
   private fertilizePanel: FertilizePanel | null = null;
   private seedPanel: ItemPickerPanel | null = null;
-  private medicinePanel: ItemPickerPanel | null = null;
+  private pesticidePanel: ItemPickerPanel | null = null;
   private unsubscribeSnapshot: (() => void) | null = null;
   private ready = false;
 
@@ -84,7 +87,6 @@ export class GameRoot extends Component {
     this.unsubscribeSnapshot = gameSync.onSnapshot(snapshot => this.applySnapshot(snapshot));
     cocosGame.on(Game.EVENT_SHOW, this.onAppShow, this);
 
-    // 缓存只用于弱网首屏展示，离线时禁止经济操作，绝不回写覆盖服务端。
     const cached = gameSync.restoreCached();
     if (cached) this.toast?.show('正在同步最新数据…');
 
@@ -117,10 +119,9 @@ export class GameRoot extends Component {
     });
   };
 
-  /** 定期拉取最新快照（不带目录，流量更小） */
   private poll = () => {
     if (!SessionStore.get()) return;
-    void gameSync.refresh().catch(() => { /* 轮询失败静默重试 */ });
+    void gameSync.refresh().catch(() => {});
   };
 
   private applySnapshot(snapshot: GameSnapshot): void {
@@ -195,7 +196,14 @@ export class GameRoot extends Component {
     node.off(Button.EventType.CLICK);
     node.on(Button.EventType.CLICK, () => {
       if (!this.landView) return;
-      // 再点一次同一个工具 → 取消
+
+      // 浇水按钮特殊处理：直接弹出 WaterPrompt
+      if (mode === 'water') {
+        this.landView.setTool('none');
+        this.openWaterPromptFromLeftBar();
+        return;
+      }
+
       const next: ToolMode = this.landView.currentTool === mode ? 'none' : mode;
       const icon = node.getComponent(Sprite) || node.getComponentInChildren(Sprite);
       this.landView.setTool(next, next === 'none' ? null : (icon?.spriteFrame || null));
@@ -207,6 +215,18 @@ export class GameRoot extends Component {
       };
       this.toast?.show(next === 'none' ? '已取消工具' : prompts[mode]);
     });
+  }
+
+  /** LeftBar 浇水按钮直接弹出 WaterPrompt */
+  private openWaterPromptFromLeftBar(): void {
+    if (!this.waterPrompt) { this.toast?.show('场景缺少 WaterPrompt 面板'); return; }
+    this.waterPrompt.onConfirm = (times) => {
+      if (this.landView) {
+        this.landView.setWaterTimes(times);
+        this.toast?.show('请选择要浇水的土地');
+      }
+    };
+    this.waterPrompt.open();
   }
 
   private findNode(root: Node | null, name: string): Node | null {
@@ -246,19 +266,22 @@ export class GameRoot extends Component {
         this.findNode(root, 'ToolCursorLayer'),
         this.findNode(root, 'ToolEffectLayer'),
       );
-      // 面板注入（全部是 Cocos 场景节点上的组件）
+
       this.soilInfo = componentOf(this.soilInfoNode || this.findNode(root, 'SoilInfoPanel'), SoilInfoPanel);
       this.waterPrompt = componentOf(this.waterPromptNode || this.findNode(root, 'WaterPrompt'), WaterPrompt);
       this.fertilizePanel = componentOf(
         this.fertilizePanelNode || this.findNode(root, 'FertilizePanel'), FertilizePanel);
       this.seedPanel = componentOf(this.seedPanelNode || this.findNode(root, 'SeedPanel'), ItemPickerPanel);
-      this.medicinePanel = componentOf(
-        this.medicinePanelNode || this.findNode(root, 'MedicinePanel'), ItemPickerPanel);
+      // MedicinePanel → PesticidePanel（兼容两种名称）
+      this.pesticidePanel = componentOf(
+        this.pesticidePanelNode || this.findNode(root, 'PesticidePanel') || this.findNode(root, 'MedicinePanel'),
+        ItemPickerPanel);
+
       this.landView.soilInfoPanel = this.soilInfo;
       this.landView.waterPrompt = this.waterPrompt;
       this.landView.fertilizePanel = this.fertilizePanel;
       this.landView.seedPicker = this.seedPanel;
-      this.landView.medicinePicker = this.medicinePanel;
+      this.landView.medicinePicker = this.pesticidePanel;
       this.landView.openShop = () => this.openShop();
       this.landView.isShopOpen = () => !!this.shop?.isOpen;
     }
@@ -266,9 +289,38 @@ export class GameRoot extends Component {
     const weatherNode = this.weatherHudNode || this.findNode(root, 'WeatherHud');
     this.weatherHud = componentOf(weatherNode, WeatherHud);
 
-    // ---- 左栏工具 ----
+    // ---- LeftBar（简化结构） ----
     const leftBar = this.leftBar || this.findNode(root, 'LeftBar') || this.findNode(root, 'LefttBar');
     if (leftBar) {
+      // 展开/折叠按钮
+      const expandBtn = leftBar.getChildByName('expand') || leftBar.getChildByName('collapse');
+      if (expandBtn) {
+        this.bindLeftBarToggle(leftBar, expandBtn);
+      }
+
+      // 背包按钮
+      const backpackBtn = leftBar.getChildByName('BackpackBtn') || this.findNode(leftBar, 'BackpackBtn');
+      if (backpackBtn) {
+        this.bindOpenButton(backpackBtn, () => {
+          if (this.shop?.isOpen) this.shop.close();
+          this.backpack?.open();
+        });
+      }
+
+      // 商店按钮
+      const shopBtn = leftBar.getChildByName('ShopBtn') || this.findNode(leftBar, 'ShopBtn');
+      if (shopBtn) {
+        this.bindOpenButton(shopBtn, () => this.openShop());
+      }
+
+      // 工具按钮（与 BackpackBtn 相同结构）
+      this.bindToolButton(leftBar, 'ShovelBtn', 'shovel');
+      this.bindToolButton(leftBar, 'HarvestBtn', 'harvest');
+      this.bindToolButton(leftBar, 'WaterBtn', 'water');
+      this.bindToolButton(leftBar, 'FertilizerBtn', 'fert');
+      this.bindToolButton(leftBar, 'PesticideBtn', 'fert'); // 暂时复用
+
+      // 兼容旧名称
       this.bindToolButton(leftBar, 'Water', 'water');
       this.bindToolButton(leftBar, 'Fertilizer', 'fert');
       this.bindToolButton(leftBar, 'Harvest', 'harvest');
@@ -283,6 +335,7 @@ export class GameRoot extends Component {
       this.backpack.player = this.player;
       this.backpack.onToast = (message, duration) => this.toast?.show(message, duration);
       this.backpack.onAction = action;
+      this.backpack.onOpenSell = (stack) => this.openSellPanel(stack);
     }
 
     const shopNode = this.shopPanelNode || this.findNode(root, 'ShopPanel');
@@ -292,10 +345,37 @@ export class GameRoot extends Component {
       this.shop.player = this.player;
       this.shop.onToast = (message, duration) => this.toast?.show(message, duration);
       this.shop.onAction = action;
-      // 施肥框跳转商店后，关闭商店自动回到施肥框
+      this.shop.onOpenBuy = (def) => this.openBuyPanel(def);
       this.shop.onClose = () => { this.fertilizePanel?.restoreIfHidden(); };
     }
 
+    // ---- BuyPanel ----
+    const buyNode = this.buyPanelNode || this.findNode(root, 'Buy');
+    if (buyNode) {
+      this.buyPanel = buyNode.getComponent(BuyPanel) || buyNode.addComponent(BuyPanel);
+      this.buyPanel.onToast = (message, duration) => this.toast?.show(message, duration);
+      this.buyPanel.onAction = action;
+      this.buyPanel.getPlayerGold = () => this.player.gold;
+      this.buyPanel.onRefresh = () => {
+        this.shop?.render();
+        this.backpack?.render();
+        this.refreshHud();
+      };
+    }
+
+    // ---- SellPanel ----
+    const sellNode = this.sellPanelNode || this.findNode(root, 'Sell');
+    if (sellNode) {
+      this.sellPanel = sellNode.getComponent(SellPanel) || sellNode.addComponent(SellPanel);
+      this.sellPanel.onToast = (message, duration) => this.toast?.show(message, duration);
+      this.sellPanel.onAction = action;
+      this.sellPanel.onRefresh = () => {
+        this.backpack?.render();
+        this.refreshHud();
+      };
+    }
+
+    // 如果没找到背包/商店按钮，用旧的查找方式
     this.bindOpenButton(
       this.backpackButton || this.findNode(root, 'BackpackBtn') || this.findNode(root, 'btn_open_btn'),
       () => { if (this.shop?.isOpen) this.shop.close(); this.backpack?.open(); },
@@ -306,9 +386,55 @@ export class GameRoot extends Component {
     );
   }
 
+  /** LeftBar 展开/折叠动画 */
+  private bindLeftBarToggle(leftBar: Node, toggleBtn: Node): void {
+    let expanded = true;
+    const button = toggleBtn.getComponent(Button) || toggleBtn.addComponent(Button);
+    button.transition = Button.Transition.SCALE;
+    button.zoomScale = 0.92;
+    toggleBtn.off(Button.EventType.CLICK);
+    toggleBtn.on(Button.EventType.CLICK, () => {
+      expanded = !expanded;
+      // 简单的展开/折叠动画：移动工具按钮的 x 位置
+      const toolNames = ['BackpackBtn', 'ShopBtn', 'ShovelBtn', 'HarvestBtn', 'WaterBtn', 'FertilizerBtn', 'PesticideBtn',
+        'Water', 'Fertilizer', 'Harvest', 'Shovel'];
+      for (const name of toolNames) {
+        const btn = leftBar.getChildByName(name);
+        if (btn) {
+          const targetX = expanded ? btn.position.x : -200;
+          tween(btn).to(0.2, { position: new Vec3(expanded ? 0 : -200, btn.position.y, btn.position.z) }).start();
+        }
+      }
+    });
+  }
+
   private openShop(): void {
     if (this.backpack?.isOpen) this.backpack.close();
     this.shop?.open();
+  }
+
+  private openBuyPanel(def: ShopDef): void {
+    if (this.buyPanel) {
+      this.buyPanel.open(def);
+    } else {
+      // 兜底：直接购买
+      void this.executeAction('buy_item', { itemId: def.id, quantity: 1 }).then(result => {
+        this.toast?.show(result.message);
+        this.shop?.render();
+      });
+    }
+  }
+
+  private openSellPanel(stack: InventoryStack): void {
+    if (this.sellPanel) {
+      this.sellPanel.open(stack);
+    } else {
+      // 兜底：直接出售
+      void this.executeAction('sell_item', { itemId: stack.id, quantity: 1 }).then(result => {
+        this.toast?.show(result.message);
+        this.backpack?.render();
+      });
+    }
   }
 
   private bindOpenButton(node: Node | null, handler: () => void): void {

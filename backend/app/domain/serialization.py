@@ -91,6 +91,11 @@ def plot_to_dict(plot: Plot, world: Dict[str, Any]) -> Dict[str, Any]:
             "status": plot.disease_status,
             "onsetAt": plot.disease_onset_ms,
         },
+        "grass": {
+            "level": round(plot.grass_level, 2),
+            "status": plot.grass_status,
+            "onsetAt": plot.grass_onset_ms,
+        },
         # 生效中的肥料 / 药品
         "activeFertilizers": _active_fertilizers(plot, best_fertilizer_id),
         "activeMedicines": _active_medicines(plot),

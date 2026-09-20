@@ -11,7 +11,7 @@
  *
  * 交互：点击下面的肥料 → 上面出现；已经选过则数量 +1；点击上面的格子 → 数量 -1。
  */
-import { _decorator, Button, Component, Label, Layout, Node, ScrollView, Sprite } from 'cc';
+import { _decorator, Button, Component, instantiate, Label, Layout, Layers, Node, ScrollView, Size, Sprite, UITransform } from 'cc';
 import { InventoryModel } from '../data/InventoryModel';
 import type { InventoryStack } from '../data/ItemData';
 import { FERTILIZERS, getFertilizerDef } from '../config/FertilizerConfig';
@@ -38,6 +38,8 @@ export class FertilizePanel extends Component {
   @property(Label) public hintLabel: Label | null = null;
 
   isOpen = false;
+  private _initialized = false;
+  private cellSize = 120;
   inventory: InventoryModel | null = null;
   onConfirm: (items: { itemId: string; count: number }[], appendTime: boolean) => void = () => {};
   onOpenShop: () => void = () => {};
@@ -65,11 +67,13 @@ export class FertilizePanel extends Component {
       this.refreshHint();
     });
     this.node.active = false;
+    this._initialized = true;
   }
 
   get plot(): number { return this.plotId; }
 
   open(plotId: number): void {
+    if (!this._initialized) { this.onLoad(); }
     this.plotId = plotId;
     this.selections.clear();
     this.hiddenByShop = false;
@@ -133,6 +137,14 @@ export class FertilizePanel extends Component {
 
   private fillList(content: Node | null, rows: { icon: string; name: string; count: string; onClick: () => void }[]): void {
     if (!content) return;
+    
+    // 检测格子尺寸
+    const layout = content.getComponent(Layout);
+    this.cellSize = this.detectCellSize(layout, content);
+    if (layout) {
+      layout.cellSize = new Size(this.cellSize, this.cellSize);
+    }
+    
     const children = content.children;
     children.forEach((child, index) => {
       setActive(child, index < rows.length);
@@ -140,8 +152,7 @@ export class FertilizePanel extends Component {
     });
     const template = children.length > 0 ? children[0] : null;
     for (let index = children.length; index < rows.length; index++) {
-      if (!template) break;
-      const cell = template.clone();
+      const cell = template ? instantiate(template) : this.createFallbackCell();
       cell.active = true;
       content.addChild(cell);
       this.bindCell(cell, rows[index]);
@@ -161,6 +172,54 @@ export class FertilizePanel extends Component {
     if (count) count.string = row.count;
     cell.off(Node.EventType.TOUCH_END);
     cell.on(Node.EventType.TOUCH_END, () => row.onClick());
+  }
+
+  /**
+   * 检测格子尺寸：优先读取已有子节点的 UITransform，其次读取 Layout 的 cellSize，
+   * 最后才根据 ScrollView 宽度动态计算。
+   */
+  private detectCellSize(layout: Layout | null, content: Node): number {
+    // 1. 优先读取已有子节点（编辑器放入的预制体）的 UITransform 尺寸
+    if (content.children.length > 0) {
+      const firstChild = content.children[0];
+      const childUT = firstChild.getComponent(UITransform);
+      if (childUT && childUT.contentSize.width > 0) {
+        return childUT.contentSize.width;
+      }
+    }
+
+    // 2. 读取 Layout 组件中已设置的 cellSize
+    if (layout && layout.cellSize.width > 0) {
+      return layout.cellSize.width;
+    }
+
+    // 3. 兜底：根据 ScrollView 宽度动态计算
+    const scrollView = content.parent?.parent?.getComponent(ScrollView);
+    if (scrollView) {
+      const scrollUT = scrollView.node.getComponent(UITransform);
+      const viewWidth = scrollUT ? scrollUT.contentSize.width : 720;
+
+      const padL = layout ? layout.paddingLeft : 20;
+      const padR = layout ? layout.paddingRight : 0;
+      const spX = layout ? layout.spacingX : 20;
+
+      const cols = (layout && layout.type === Layout.Type.GRID)
+        ? Math.max(1, (layout as any).constraintNum || 5)
+        : 5;
+
+      const available = viewWidth - padL - padR;
+      const cell = Math.floor((available - (cols - 1) * spX) / cols);
+      return Math.max(60, Math.min(cell, 160));
+    }
+
+    return 120;
+  }
+
+  private createFallbackCell(): Node {
+    const n = new Node('Cell');
+    n.layer = Layers.Enum.UI_2D;
+    n.addComponent(UITransform).setContentSize(this.cellSize, this.cellSize);
+    return n;
   }
 
   private describe(stack: InventoryStack): string {

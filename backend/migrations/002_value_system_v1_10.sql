@@ -1,11 +1,6 @@
--- 数值系统 v1.10：季节/天气/温度、单一肥力、病虫害、品质与产量、土地金币解锁。
--- 注意：迁移执行器按 ";" 切分语句，因此本文件内不要出现字符串字面量里的分号。
--- 旧存档兼容：作物表整体替换为 v1.10 的 24 种作物，旧作物（wheat/corn/...）不再存在，
--- 已在种植的旧作物会被清空；土地湿度/肥力/土壤健康统一重置为 70。
-
 ALTER TABLE player_states
     ADD COLUMN world_seed VARCHAR(64) NOT NULL DEFAULT '' AFTER version,
-    MODIFY COLUMN coins BIGINT NOT NULL DEFAULT 100
+    MODIFY COLUMN coins BIGINT NOT NULL DEFAULT 100;
 
 ALTER TABLE player_farm_plots
     ADD COLUMN unlocked BOOLEAN NOT NULL DEFAULT FALSE AFTER plot_index,
@@ -32,13 +27,12 @@ ALTER TABLE player_farm_plots
     ADD CONSTRAINT chk_plot_stage_growth CHECK (stage_growth BETWEEN 0 AND 100),
     ADD CONSTRAINT chk_plot_pest_level CHECK (pest_level BETWEEN 0 AND 100),
     ADD CONSTRAINT chk_plot_disease_level CHECK (disease_level BETWEEN 0 AND 100),
-    ADD CONSTRAINT chk_plot_quality CHECK (quality_score BETWEEN 0 AND 100)
+    ADD CONSTRAINT chk_plot_quality CHECK (quality_score BETWEEN 0 AND 100);
 
 ALTER TABLE player_farm_plots
     MODIFY COLUMN water DECIMAL(7,3) NOT NULL DEFAULT 70,
-    MODIFY COLUMN fertilizer DECIMAL(7,3) NOT NULL DEFAULT 70
+    MODIFY COLUMN fertilizer DECIMAL(7,3) NOT NULL DEFAULT 70;
 
--- 旧存档：1 号地（以及此前已开发的地）直接解锁，湿度/肥力/土壤健康重置为 70，旧作物清空。
 UPDATE player_farm_plots
     SET unlocked = TRUE,
         water = 70,
@@ -64,9 +58,8 @@ UPDATE player_farm_plots
         disease_onset_ms = NULL,
         active_fertilizers = NULL,
         active_medicines = NULL
-    WHERE plot_index = 1 OR developed = TRUE
+    WHERE plot_index = 1 OR developed = TRUE;
 
--- 玩家操作流水（文档第十四章 PlayerAction）
 CREATE TABLE IF NOT EXISTS player_actions (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     user_id BIGINT UNSIGNED NOT NULL,
@@ -82,9 +75,8 @@ CREATE TABLE IF NOT EXISTS player_actions (
     PRIMARY KEY (id),
     KEY idx_player_actions_user_day (user_id, day_index),
     CONSTRAINT fk_player_action_account FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 每日经济统计（文档第十四章 DailyEconomy），按天保留历史
 CREATE TABLE IF NOT EXISTS player_daily_economy (
     user_id BIGINT UNSIGNED NOT NULL,
     day_index INT NOT NULL,

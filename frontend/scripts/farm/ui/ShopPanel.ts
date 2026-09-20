@@ -1,7 +1,11 @@
 /**
- * ui/ShopPanel.ts —— 商店面板逻辑（参考 BackpackPanel 实现）
+ * ui/ShopPanel.ts —— 商店面板逻辑
+ *
+ * 商店卖种子、化肥、药剂。默认显示全部，可按分类筛选。
+ * 格子尺寸根据 ScrollView 实际宽度和 Layout 参数动态计算，适配不同屏幕。
+ * 点击购买弹出 BuyPanel。
  */
-import { _decorator, Button, Color, Component, EventTouch, Label, Layout, Node, ScrollView, Size, tween, UIOpacity, UITransform, Vec3 } from 'cc';
+import { _decorator, Button, Color, Component, EventTouch, instantiate, Label, Layout, Layers, Node, ScrollView, Size, tween, UIOpacity, UITransform, Vec3 } from 'cc';
 import { InventoryModel } from '../data/InventoryModel';
 import { PlayerModel } from '../data/PlayerModel';
 import type { ShopDef } from '../data/ItemData';
@@ -15,7 +19,7 @@ const C_TITLE   = new Color(255, 233, 176, 255);
 const C_TEXT    = new Color(243, 232, 207, 255);
 const C_TEXT_D  = new Color(58, 42, 18, 255);
 
-type ShopCategory = 'seed' | 'fert' | 'medicine';
+type ShopCategory = 'all' | 'seed' | 'fert' | 'pesticide';
 
 @ccclass('ShopPanel')
 export class ShopPanel extends Component {
@@ -23,18 +27,20 @@ export class ShopPanel extends Component {
   player!: PlayerModel;
   onToast: (msg: string, duration?: number) => void = () => {};
   onAction: GameActionHandler = async () => ({ ok: false, message: '网络服务尚未就绪' });
+  onOpenBuy: (def: ShopDef) => void = () => {};
 
-  private panelNode: Node | null = null;
-  private pendingItems = new Set<string>();
   private scrollView: ScrollView | null = null;
   private contentNode: Node | null = null;
-  private goldLabel: Label | null = null;
+  private footerLabel: Label | null = null;
   private tabs: { node: Node; lb: Label | null; cat: ShopCategory }[] = [];
+  private sortBtns: { node: Node; lb: Label | null; key: 'time' | 'name' }[] = [];
 
-  /** 关闭回调：施肥框跳转商店后靠它回到施肥框 */
   onClose: () => void = () => {};
 
-  private category: ShopCategory = 'seed';
+  private category: ShopCategory = 'all';
+  private sortKey: 'time' | 'name' = 'name';
+  private sortDir: 'asc' | 'desc' = 'asc';
+  private cellSize = 124;
   isOpen = false;
 
   onLoad() {
@@ -47,17 +53,14 @@ export class ShopPanel extends Component {
       if (e.target === this.node) this.close();
     });
 
-    this.panelNode = this.node.getChildByName('Panel') || this.node;
-    const toolbar = this.findDescendant(this.panelNode, 'toolbar');
-    const header = this.findDescendant(this.panelNode, 'header');
-    const scroll = this.findDescendant(this.panelNode, 'ScrollView');
-    const footer = this.findDescendant(this.panelNode, 'Footer') || this.findDescendant(this.panelNode, 'footer');
+    const toolbar = this.findDescendant(this.node, 'Toolbar') || this.findDescendant(this.node, 'toolbar');
+    const header = this.findDescendant(this.node, 'Header') || this.findDescendant(this.node, 'header');
+    const scroll = this.findDescendant(this.node, 'ScrollView');
+    const footer = this.findDescendant(this.node, 'Footer') || this.findDescendant(this.node, 'footer');
 
     if (scroll) {
       this.scrollView = scroll.getComponent(ScrollView);
-      if (this.scrollView) {
-        this.scrollView.verticalScrollBar = null;
-      }
+      if (this.scrollView) this.scrollView.verticalScrollBar = null;
       const viewNode = scroll.getChildByName('view');
       if (viewNode) {
         this.contentNode = viewNode.getChildByName('content');
@@ -68,12 +71,11 @@ export class ShopPanel extends Component {
     }
 
     if (this.contentNode) {
-      let layout = this.contentNode.getComponent(Layout) || this.contentNode.addComponent(Layout);
-      layout.cellSize = new Size(97.33, 97.33);
+      const layout = this.contentNode.getComponent(Layout) || this.contentNode.addComponent(Layout);
       const ut = this.contentNode.getComponent(UITransform);
-      if (ut) {
-        ut.setAnchorPoint(0.5, 1);
-      }
+      if (ut) ut.setAnchorPoint(0.5, 1);
+      this.cellSize = this.detectCellSize(layout);
+      layout.cellSize = new Size(this.cellSize, this.cellSize);
     }
 
     if (header) {
@@ -85,32 +87,109 @@ export class ShopPanel extends Component {
     }
 
     if (toolbar) {
-      const catList: ShopCategory[] = ['seed', 'fert', 'medicine'];
-      const tabNames = ['tab', 'tab-001', 'tab-002'];
-      tabNames.forEach((name, i) => {
-        const tabNode = toolbar.getChildByName(name);
-        if (tabNode) {
-          const lb = tabNode.getComponentInChildren(Label);
-          const cat = catList[i];
-          tabNode.off(Button.EventType.CLICK);
-          tabNode.on(Button.EventType.CLICK, () => this.setCategory(cat));
-          this.tabs.push({ node: tabNode, lb, cat });
-        }
-      });
+      const left = this.findDescendant(toolbar, 'left');
+      const timeBtn = left ? (left.getChildByName('time') || left.getChildByName('btn_time'))
+        : (toolbar.getChildByName('btn_time') || toolbar.getChildByName('time'));
+      const nameBtn = left ? (left.getChildByName('name') || left.getChildByName('btn_name'))
+        : (toolbar.getChildByName('btn_name') || toolbar.getChildByName('name'));
+
+      if (timeBtn) {
+        const lb = timeBtn.getComponentInChildren(Label);
+        timeBtn.off(Button.EventType.CLICK);
+        timeBtn.on(Button.EventType.CLICK, () => this.setSort('time'));
+        this.sortBtns.push({ node: timeBtn, lb, key: 'time' });
+      }
+      if (nameBtn) {
+        const lb = nameBtn.getComponentInChildren(Label);
+        nameBtn.off(Button.EventType.CLICK);
+        nameBtn.on(Button.EventType.CLICK, () => this.setSort('name'));
+        this.sortBtns.push({ node: nameBtn, lb, key: 'name' });
+      }
+
+      // 分类 tab：优先找 right 子节点，再兼容旧 tab 名称
+      const right = this.findDescendant(toolbar, 'right');
+      if (right) {
+        const catList: ShopCategory[] = ['all', 'seed', 'fert', 'pesticide'];
+        const btnNames = ['all', 'seed', 'fert', 'pesticide'];
+        btnNames.forEach((name, i) => {
+          const tabNode = right.getChildByName(name);
+          if (tabNode) {
+            const lb = tabNode.getComponentInChildren(Label);
+            tabNode.off(Button.EventType.CLICK);
+            tabNode.on(Button.EventType.CLICK, () => this.setCategory(catList[i]));
+            this.tabs.push({ node: tabNode, lb, cat: catList[i] });
+          }
+        });
+      }
+      if (this.tabs.length === 0) {
+        const catList: ShopCategory[] = ['seed', 'fert', 'pesticide'];
+        const tabNames = ['tab', 'tab-001', 'tab-002'];
+        tabNames.forEach((name, i) => {
+          const tabNode = toolbar.getChildByName(name);
+          if (tabNode) {
+            const lb = tabNode.getComponentInChildren(Label);
+            tabNode.off(Button.EventType.CLICK);
+            tabNode.on(Button.EventType.CLICK, () => this.setCategory(catList[i]));
+            this.tabs.push({ node: tabNode, lb, cat: catList[i] });
+          }
+        });
+      }
     }
 
     if (footer) {
-      this.goldLabel = footer.getComponentInChildren(Label);
+      this.footerLabel = footer.getComponentInChildren(Label);
     }
 
+    this.refreshSort();
     this.refreshTab();
   }
 
   /**
-   * 把 content 及其子节点（商品卡）的 z 归零。
-   * 预制体实例可能带着很深的 z（卡片 -2000），叠加面板自身 -1000 后会超出相机远裁剪面(far=2000)
-   * 被裁掉，导致 ScrollView/view 下面整块看不见。归零即与其它 UI 同层渲染。
+   * 检测格子尺寸：优先读取编辑器放置的预制体大小，其次读取 Layout 已有 cellSize，
+   * 最后才根据 ScrollView 宽度动态计算。
    */
+  private detectCellSize(layout: Layout | null): number {
+    // 1. 优先读取已有子节点（编辑器放入的预制体）的 UITransform 尺寸
+    if (this.contentNode && this.contentNode.children.length > 0) {
+      const firstChild = this.contentNode.children[0];
+      const childUT = firstChild.getComponent(UITransform);
+      if (childUT && childUT.contentSize.width > 0) {
+        return childUT.contentSize.width;
+      }
+    }
+
+    // 2. 读取 Layout 组件中已设置的 cellSize（编辑器 Inspector 里配的）
+    if (layout && layout.cellSize.width > 0) {
+      return layout.cellSize.width;
+    }
+
+    // 3. 兜底：根据 ScrollView 宽度动态计算
+    return this.calcCellSizeFromView(layout);
+  }
+
+  /**
+   * 根据 ScrollView 宽度和 Layout 的 padding/spacing/constraint 动态计算格子尺寸。
+   * 仅在编辑器未放置预制体且 Layout 未设 cellSize 时使用。
+   */
+  private calcCellSizeFromView(layout: Layout | null): number {
+    if (!this.scrollView) return 120;
+    const scrollUT = this.scrollView.node.getComponent(UITransform);
+    const viewWidth = scrollUT ? scrollUT.contentSize.width : 720;
+
+    const padL = layout ? layout.paddingLeft : 20;
+    const padR = layout ? layout.paddingRight : 0;
+    const spX  = layout ? layout.spacingX : 20;
+
+    // FIXED_COL 模式：constraintNum 列
+    const cols = (layout && layout.type === Layout.Type.GRID && layout.resizeMode === Layout.ResizeMode.CONTAINER)
+      ? Math.max(1, (layout as any).constraintNum || 5)
+      : 5;
+
+    const available = viewWidth - padL - padR;
+    const cell = Math.floor((available - (cols - 1) * spX) / cols);
+    return Math.max(60, Math.min(cell, 160));  // 限制在 60~160 之间
+  }
+
   private normalizeDepth() {
     if (!this.contentNode) return;
     const p = this.contentNode.position;
@@ -132,18 +211,19 @@ export class ShopPanel extends Component {
   }
 
   open() {
+    if (!this.contentNode) this.bindNodes();
     this.isOpen = true;
     this.node.active = true;
     this.render();
     this.normalizeDepth();
-    if (this.panelNode) {
-      const op = this.panelNode.getComponent(UIOpacity) || this.panelNode.addComponent(UIOpacity);
+    if (this.node) {
+      const op = this.node.getComponent(UIOpacity) || this.node.addComponent(UIOpacity);
       op.opacity = 0;
-      this.panelNode.setScale(0.9, 0.9, 1);
+      this.node.setScale(0.9, 0.9, 1);
       tween(op).stop();
       tween(op).to(0.18, { opacity: 255 }).start();
-      tween(this.panelNode).stop();
-      tween(this.panelNode).to(0.22, { scale: new Vec3(1, 1, 1) }).start();
+      tween(this.node).stop();
+      tween(this.node).to(0.22, { scale: new Vec3(1, 1, 1) }).start();
     }
   }
 
@@ -156,7 +236,23 @@ export class ShopPanel extends Component {
 
   render() {
     if (!this.contentNode) return;
-    const list: ShopDef[] = SHOP_ITEMS.filter(s => s.category === this.category);
+
+    // 'all' 显示全部，否则按分类过滤
+    let list: ShopDef[] = this.category === 'all'
+      ? [...SHOP_ITEMS]
+      : SHOP_ITEMS.filter(s => s.category === this.category);
+
+    // 排序
+    list = list.sort((a, b) => {
+      let result: number;
+      if (this.sortKey === 'name') {
+        result = a.name.localeCompare(b.name, 'zh-Hans-CN');
+      } else {
+        result = a.price - b.price;
+      }
+      return this.sortDir === 'desc' ? -result : result;
+    });
+
     const children = this.contentNode.children;
 
     for (let i = 0; i < children.length; i++) {
@@ -164,40 +260,40 @@ export class ShopPanel extends Component {
       if (i < list.length) {
         child.active = true;
         let si = child.getComponent(ShopItem) || child.addComponent(ShopItem);
-        si.init(list[i], this.player.gold >= list[i].price && !this.pendingItems.has(list[i].id), (d) => { void this.buy(d); });
+        si.init(list[i], this.player.gold >= list[i].price, (d) => { this.buyItem(d); });
       } else {
         child.active = false;
       }
     }
 
-    // 复用第一个卡片作为模板克隆补齐（不再 new 空节点）
     const template = children.length > 0 ? children[0] : null;
     for (let i = children.length; i < list.length; i++) {
-      if (!template) break;
       const def = list[i];
-      const item = template.clone();
-      item.active = true;
-      const si = item.getComponent(ShopItem) || item.addComponent(ShopItem);
-      si.init(def, this.player.gold >= def.price && !this.pendingItems.has(def.id), (d) => { void this.buy(d); });
-      this.contentNode.addChild(item);
+      const cell = template ? instantiate(template) : this.createCell();
+      cell.active = true;
+      let si = cell.getComponent(ShopItem) || cell.addComponent(ShopItem);
+      si.init(def, this.player.gold >= def.price, (d) => { this.buyItem(d); });
+      this.contentNode.addChild(cell);
     }
 
     const layout = this.contentNode.getComponent(Layout);
-    const ut = this.contentNode.getComponent(UITransform);
-    if (ut) {
-      ut.setAnchorPoint(0.5, 1);
-    }
     if (layout) {
-      layout.cellSize = new Size(97.33, 97.33);
       layout.updateLayout();
     }
     this.normalizeDepth();
-    if (this.goldLabel) {
-      this.goldLabel.string = `金币：${this.player.gold} · 在售 ${list.length} 种`;
+    if (this.footerLabel) {
+      this.footerLabel.string = `金币：${this.player.gold} · 在售 ${list.length} 种`;
     }
     if (this.scrollView) {
       this.scrollView.scrollToTop(0);
     }
+  }
+
+  private createCell(): Node {
+    const n = new Node('ShopItem');
+    n.layer = Layers.Enum.UI_2D;
+    n.addComponent(UITransform).setContentSize(this.cellSize, this.cellSize);
+    return n;
   }
 
   private setCategory(c: ShopCategory) {
@@ -206,10 +302,20 @@ export class ShopPanel extends Component {
     this.render();
   }
 
+  private setSort(k: 'time' | 'name') {
+    if (this.sortKey === k) {
+      this.sortDir = this.sortDir === 'desc' ? 'asc' : 'desc';
+    } else {
+      this.sortKey = k;
+      this.sortDir = 'asc';
+    }
+    this.refreshSort();
+    this.render();
+  }
+
   private refreshTab() {
-    const idx = (['seed', 'fert', 'medicine'] as ShopCategory[]).indexOf(this.category);
-    this.tabs.forEach((t, i) => {
-      const active = i === idx;
+    this.tabs.forEach((t) => {
+      const active = t.cat === this.category;
       if (t.lb) {
         t.lb.color = active ? C_TEXT_D : C_TEXT;
         t.lb.isBold = active;
@@ -217,17 +323,20 @@ export class ShopPanel extends Component {
     });
   }
 
-  private async buy(def: ShopDef) {
-    if (this.pendingItems.has(def.id)) return;
+  private refreshSort() {
+    this.sortBtns.forEach((b) => {
+      const active = this.sortKey === b.key;
+      const arrow = active ? (this.sortDir === 'desc' ? ' ↓' : ' ↑') : '';
+      if (b.lb) {
+        b.lb.string = (b.key === 'time' ? '时间' : '名称') + arrow;
+        b.lb.color = active ? C_TITLE : C_TEXT;
+        b.lb.isBold = active;
+      }
+    });
+  }
+
+  private buyItem(def: ShopDef) {
     if (this.player.gold < def.price) { this.onToast('金币不足'); return; }
-    this.pendingItems.add(def.id);
-    this.render();
-    try {
-      const result = await this.onAction('buy_item', { itemId: def.id, quantity: 1 });
-      this.onToast(result.message);
-    } finally {
-      this.pendingItems.delete(def.id);
-      this.render();
-    }
+    this.onOpenBuy(def);
   }
 }

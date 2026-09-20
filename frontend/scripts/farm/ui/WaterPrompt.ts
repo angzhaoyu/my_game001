@@ -1,41 +1,69 @@
 /**
  * ui/WaterPrompt.ts —— 浇水次数选择框
  *
- * 节点在 Cocos 里搭好：次数按钮（btn_1…btn_5）由编辑器摆放，代码只读取子节点
- * 并绑定点击。确认后进入「浇水光标跟随鼠标」状态，碰到土块即浇水并唤醒土块动画。
+ * 预制体结构：
+ *   WaterPrompt（挂载在 WaterPrompt 节点下）
+ *   ├─ Header
+ *   │  ├─ header        Sprite
+ *   │  ├─ close         Button  关闭按钮
+ *   │  └─ title         Label   「浇 水」
+ *   ├─ Body
+ *   │  ├─ numbers
+ *   │  │  ├─ minus      Button  减号
+ *   │  │  ├─ munber
+ *   │  │  │  └─ number   Label  默认[1]
+ *   │  │  └─ plus       Button  加号
+ *   │  ├─ cancel
+ *   │  │  └─ label      Label
+ *   │  └─ confirm
+ *   │     └─ label      Label
+ *
+ * 确认后鼠标变成水壶，点击激活的土地，然后水壶消失，触发浇水动画。
  */
-import { _decorator, Button, Component, Label, Node } from 'cc';
+import { _decorator, Button, Component, EditBox, Label, Node } from 'cc';
 import { LAND } from '../config/LandConfig';
 
 const { ccclass, property } = _decorator;
 
 @ccclass('WaterPrompt')
 export class WaterPrompt extends Component {
-  @property(Node) public timesRoot: Node | null = null;
+  @property(Node) public minusBtn: Node | null = null;
+  @property(Node) public plusBtn: Node | null = null;
+  @property(Node) public numberNode: Node | null = null;
   @property(Node) public confirmButton: Node | null = null;
   @property(Node) public closeButton: Node | null = null;
-  @property(Label) public hintLabel: Label | null = null;
+  @property(Node) public cancelBtn: Node | null = null;
 
   isOpen = false;
   onConfirm: (times: number) => void = () => {};
 
   private times = 1;
-  private buttons: { node: Node; times: number }[] = [];
 
   onLoad() {
     this.node.on(Node.EventType.TOUCH_END, (event: any) => {
       if (event?.target === this.node) this.close(0);
     });
-    if (this.timesRoot) {
-      this.timesRoot.children.forEach(child => {
-        const matched = /(\d+)/.exec(child.name);
-        const times = matched ? Math.max(1, Math.min(LAND.WATER_MAX_TIMES, Number(matched[1]))) : 0;
-        if (!times) return;
-        child.off(Button.EventType.CLICK);
-        child.on(Button.EventType.CLICK, () => this.select(times));
-        this.buttons.push({ node: child, times });
+
+    if (this.minusBtn) {
+      this.minusBtn.off(Button.EventType.CLICK);
+      this.minusBtn.on(Button.EventType.CLICK, () => {
+        if (this.times > 1) {
+          this.times--;
+          this.refreshDisplay();
+        }
       });
     }
+
+    if (this.plusBtn) {
+      this.plusBtn.off(Button.EventType.CLICK);
+      this.plusBtn.on(Button.EventType.CLICK, () => {
+        if (this.times < LAND.WATER_MAX_TIMES) {
+          this.times++;
+          this.refreshDisplay();
+        }
+      });
+    }
+
     if (this.confirmButton) {
       this.confirmButton.off(Button.EventType.CLICK);
       this.confirmButton.on(Button.EventType.CLICK, () => {
@@ -44,10 +72,20 @@ export class WaterPrompt extends Component {
         this.onConfirm(times);
       });
     }
+
     if (this.closeButton) {
       this.closeButton.off(Button.EventType.CLICK);
       this.closeButton.on(Button.EventType.CLICK, () => this.close(0));
     }
+
+    if (this.cancelBtn) {
+      this.cancelBtn.off(Button.EventType.CLICK);
+      this.cancelBtn.on(Button.EventType.CLICK, () => this.close(0));
+    }
+
+    // 双击 munber 节点可以手动输入数字
+    this.bindDoubleClick();
+
     this.node.active = false;
   }
 
@@ -55,7 +93,8 @@ export class WaterPrompt extends Component {
     this.isOpen = true;
     this.node.active = true;
     this.node.setSiblingIndex(this.node.parent ? this.node.parent.children.length - 1 : 0);
-    this.select(this.times || 1);
+    this.times = this.times || 1;
+    this.refreshDisplay();
   }
 
   close(times = 0): void {
@@ -64,15 +103,55 @@ export class WaterPrompt extends Component {
     if (times > 0) this.onConfirm(times);
   }
 
-  private select(times: number): void {
-    this.times = times;
-    this.buttons.forEach(button => {
-      const active = button.times === times;
-      const transform = button.node;
-      if (transform.isValid) transform.setScale(active ? 1.08 : 1, active ? 1.08 : 1, 1);
-    });
-    if (this.hintLabel) {
-      this.hintLabel.string = `每次 +${LAND.WATER_PER_USE} 湿度，共 +${LAND.WATER_PER_USE * times}`;
+  private refreshDisplay(): void {
+    if (this.numberNode) {
+      const lb = this.numberNode.getComponent(Label) || this.numberNode.getComponentInChildren(Label);
+      if (lb) lb.string = String(this.times);
     }
+  }
+
+  /** 双击 munber 节点可以手动输入数字 */
+  private bindDoubleClick(): void {
+    const munberNode = this.findDescendant(this.node, 'munber');
+    if (!munberNode) return;
+
+    let lastClick = 0;
+    munberNode.off(Node.EventType.TOUCH_END);
+    munberNode.on(Node.EventType.TOUCH_END, () => {
+      const now = Date.now();
+      if (now - lastClick <= 400) {
+        this.promptNumber();
+      }
+      lastClick = now;
+    });
+  }
+
+  private promptNumber(): void {
+    const munberNode = this.findDescendant(this.node, 'munber');
+    if (!munberNode) return;
+
+    const editBox = munberNode.getComponent(EditBox);
+    if (editBox) {
+      editBox.string = String(this.times);
+      editBox.node.active = true;
+      editBox.node.once(EditBox.EventType.EDITING_RETURN, () => {
+        const val = parseInt(editBox.string, 10);
+        if (!isNaN(val) && val >= 1) {
+          this.times = Math.min(val, LAND.WATER_MAX_TIMES);
+          this.refreshDisplay();
+        }
+        editBox.node.active = false;
+      });
+      editBox.setFocus();
+    }
+  }
+
+  private findDescendant(root: Node, name: string): Node | null {
+    if (root.name === name) return root;
+    for (const child of root.children) {
+      const found = this.findDescendant(child, name);
+      if (found) return found;
+    }
+    return null;
   }
 }

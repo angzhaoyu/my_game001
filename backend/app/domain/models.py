@@ -77,13 +77,16 @@ class Plot:
     plant_age_minutes: float = 0.0
     mature: bool = False
 
-    # 病虫害
+    # 病虫害 / 杂草
     pest_level: float = 0.0
     disease_level: float = 0.0
+    grass_level: float = 0.0
     pest_status: str = "NONE"      # NONE / ACTIVE
     disease_status: str = "NONE"
+    grass_status: str = "NONE"     # NONE / ACTIVE
     pest_onset_ms: Optional[int] = None
     disease_onset_ms: Optional[int] = None
+    grass_onset_ms: Optional[int] = None
 
     # 生效中的肥料 / 药品
     active_fertilizers: List[ActiveFertilizer] = field(default_factory=list)
@@ -115,10 +118,13 @@ class Plot:
         self.mature = False
         self.pest_level = 0.0
         self.disease_level = 0.0
+        self.grass_level = 0.0
         self.pest_status = "NONE"
         self.disease_status = "NONE"
+        self.grass_status = "NONE"
         self.pest_onset_ms = None
         self.disease_onset_ms = None
+        self.grass_onset_ms = None
         self.active_fertilizers = []
         self.active_medicines = []
         self.quality_score = 60.0

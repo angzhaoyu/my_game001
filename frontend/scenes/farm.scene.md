@@ -1,239 +1,882 @@
-# Farm 场景节点契约（数值系统 v1.10）
+# Farm 场景完整节点契约（v1.10 终版）
 
-> 总原则：**先在 Cocos Creator 里把节点、动画、进度条、面板全部搭好，代码只负责「唤醒 / 切图 / 填字 / 播动画」。**
-> 代码不再在运行时创建 UI 节点；列表类单元格用编辑器预置的节点（不够时克隆第一个作为模板）。
->
-> 需要调的参数（阈值、路径模板、次数上限等）都做成了组件上的 `@property`，可以在属性检查器里直接改。
+> **核心原则**：节点在 Cocos Creator 编辑器里搭好，代码只做「取组件 → 填数据 → 切 active → 播动画」。
+> 代码 **不会** 在运行时创建 UI 节点（列表不够时克隆第一个子节点作为模板）。
 
 ---
 
-## 0. 全局约定
+## 0. 约定
 
 | 约定 | 说明 |
-|---|---|
-| 命名 | 节点名与下表完全一致；代码按名字查找，找不到时会 `console.warn` 并跳过（不会报错崩溃） |
-| 动画 | 任何 `fx_*` 节点挂 `Animation` 组件 + 默认 `AnimationClip`；代码只 `active=true` → `play()` → 播完 `active=false` |
-| 进度条 | `bg` + `fill`（Sprite）。`fill.fillRange` 为 0~1；如果组件上填了 `growthFillMaxWidth`，则改为按 width 缩放 |
-| 点击外部关闭 | 面板根节点铺满全屏，根节点自身接收 `TOUCH_END`（`event.target === 根节点`）时关闭 |
-| 土地图片 | 同一列有 6 张图：`farm/Lands_{state}1/locked_{col}{state}`（`state` 取 a/b/c/d，`col` 取 1..6），**不要遗漏任何一列** |
-
-土块状态与图片后缀：
-
-| 状态 | 后缀 | 判定（代码） |
-|---|---|---|
-| 正常 | `a` | 默认 |
-| 未解锁 | `b` | `plot.unlocked === false` |
-| 缺肥 | `c` | `fertility < 目标肥力 - fertilityAlertGap`（默认 10，可在预制体上改） |
-| 缺水 | `d` | `moisture < 作物 Hmin - moistureAlertGap`（默认 10） |
+|------|------|
+| **命名** | 节点名必须与本表完全一致（区分大小写）；代码按名字查找，找不到时跳过（不崩溃） |
+| **Button** | 所有可点击节点必须挂 `Button` 组件；代码会 `addComponent(Button)` 兜底但建议编辑器预挂 |
+| **面板初始状态** | 所有弹窗/面板节点 **默认 active = false**；代码在 `onLoad()` 里也会设 `active = false` |
+| **全屏遮罩** | 弹窗根节点铺满 Canvas（Widget 四边=0），挂 `BlockInputEvents` 阻止穿透；根节点自身的 `TOUCH_END`（`event.target === this.node`）触发关闭 |
+| **@property 拖绑** | 标记「拖绑」的属性必须在属性检查器里手动拖入对应子节点；标记「自动」的代码按名字查找 |
 
 ---
 
-## 1. 场景层级
+## 1. 场景层级总览
 
 ```
-Canvas（挂载 GameRoot.ts）
+Canvas                           ← 挂载 GameRoot.ts
+├─ bg_ground                     Sprite          全局背景图
+├─ Camera                        Camera + UITransform
 │
-├─ bg_ground                              Sprite        背景
-├─ Camera                                 Camera        相机
+├─ lands                         Node            ← 挂载 LandView.ts
+│  ├─ lands_1                    Node            第 1 行
+│  │  ├─ 1 (或 land_1)          Prefab          土地预制体实例（挂 LandPlot.ts）
+│  │  ├─ 2 … 6                  Prefab          同上
+│  ├─ lands_2 … lands_4          Node            结构同 lands_1
 │
-├─ lands                                  Node          土地根节点（挂载 LandView.ts）
-│  ├─ lands_1                             Node          第 1 行
-│  │  ├─ land_1 … land_6                  Prefab        土地预制体实例（每个挂 LandPlot.ts）
-│  ├─ lands_2                             Node          第 2 行（结构相同）
-│  ├─ lands_3                             Node
-│  └─ lands_4                             Node
-│     └─ 子节点名也支持 "1".."6"（老场景兼容）
-│
-├─ WeatherHud                             Node          天气栏（挂载 WeatherHud.ts，只有 Label，不做动画）
-│  ├─ lb_season                           Label         「季节：夏」
-│  ├─ lb_weather                          Label         「天气：晴」
-│  ├─ lb_temp                             Label         「温度：28.4℃」
-│  └─ lb_day                              Label         「第 19675 天」
-│
-├─ ToolCursorLayer                        Node          工具光标层
-│  └─ ToolCursor                          Node          Sprite + UIOpacity(≈180)，代码只改位置/贴图/显隐
-│
-├─ ToolEffectLayer                        Node          兜底动画模板层（地块预制体里没有对应 fx 时才用）
-│  ├─ WaterEffectTemplate                 Node          Sprite + Animation
-│  ├─ FertilizerEffectTemplate            Node
-│  ├─ HarvestEffectTemplate               Node
-│  └─ ShovelEffectTemplate                Node
-│
-├─ TopBar                                 Node          玩家信息栏（结构不变）
-│  └─ PlayerInfoSection
-│     ├─ ExpBar/Bar                       Sprite        经验条
-│     ├─ LevelLabel                       Label         Lv.N
-│     ├─ GoldHud/CoinsLabel               Label         金币
-│     ├─ DiamondsSection/DiamondsLabel    Label
-│     └─ Energy/EnergyLabel               Label
-│
-├─ LeftBar                                Node          左侧工具栏（结构不变，新增提示）
-│  ├─ ShopBtn / BackpackBtn               Node
-│  ├─ Water                               Node          浇水（点一下弹次数框，再点一下取消）
-│  ├─ Shovel                              Node          铲子（无选择框）
-│  ├─ Harvest                             Node          采摘（无选择框）
-│  └─ Fertilizer                          Node          施肥（弹施肥选择框）
-│
-├─ RightBar                               Node          右侧栏（好友，未实现）
-│
-├─ Toast                                  Node          提示（挂载 Toast.ts）
-│  └─ ToastLabel                          Label
-│
-├─ SoilInfoPanel                          Node          土壤信息框（挂载 SoilInfoPanel.ts，全屏根节点）
-│  └─ Panel                               Sprite        固定大小的面板
-│     ├─ header/Title                     Label         「第 3 块土地」
-│     ├─ header/CloseBth                  Button
-│     ├─ ScrollView                       ScrollView    可上下拉动
-│     │  └─ view/content                  Node
-│     │     ├─ row_moisture               Node          湿度
-│     │     │  ├─ lb_title                Label         「湿度」
-│     │     │  ├─ Bar/bg                  Sprite
-│     │     │  ├─ Bar/fill                Sprite        代码写 fillRange
-│     │     │  ├─ Bar/range               Sprite        作物适宜区间（有作物时唤醒）
-│     │     │  └─ lb_value                Label
-│     │     ├─ row_fertility              Node          肥力（结构同 row_moisture）
-│     │     ├─ row_soil_health            Node          土壤健康（fill + lb_value）
-│     │     ├─ row_crop                   Node          作物名/阶段（lb_crop）
-│     │     ├─ row_quality                Node          品质（lb_quality）
-│     │     ├─ row_yield                  Node          产量（lb_yield）
-│     │     ├─ row_plant_count            Node          今日播种次数（lb_plant_count）
-│     │     ├─ row_fertilizer             Node          生效肥料（lb_fertilizer，多行文本）
-│     │     ├─ row_medicine               Node          生效药品（lb_medicine）
-│     │     ├─ row_event                  Node          病虫害（lb_event）
-│     │     └─ btn_medicine               Button        「处理病虫害」→ 打开 MedicinePanel
-│     └─ footer/lb_footer                 Label
-│
-├─ WaterPrompt                            Node          浇水次数框（挂载 WaterPrompt.ts，全屏根节点）
-│  └─ Panel
-│     ├─ lb_title                         Label         「浇水」
-│     ├─ times                            Node          次数按钮容器
-│     │  ├─ btn_1 … btn_5                 Button        名称里带数字，代码读取数字作为次数
-│     ├─ lb_hint                          Label         每次 +5 湿度，共 +N
-│     ├─ btn_confirm                      Button
-│     └─ btn_close                        Button
-│
-├─ FertilizePanel                         Node          施肥框（挂载 FertilizePanel.ts，全屏根节点）
-│  └─ Panel
-│     ├─ header/Title                     Label         「给第 3 块土地施肥」
-│     ├─ header/CloseBth                  Button
-│     ├─ top/ScrollView/view/content      Node          已选肥料（Cell 预制体实例）
-│     ├─ bottom/ScrollView/view/content   Node          背包已有的肥料（Cell 预制体实例）
-│     ├─ toggle_append                    Node          追加时间（子节点 checkmark 表示勾选）
-│     ├─ lb_hint                          Label         已选提示
-│     ├─ btn_shop                         Button        跳转商店（关闭商店后自动回到本框）
-│     └─ btn_confirm                      Button
-│
-├─ SeedPanel                              Node          种子选择（挂载 ItemPickerPanel.ts，全屏根节点）
-│  └─ Panel
-│     ├─ lb_title / lb_hint               Label
-│     ├─ ScrollView/view/content          Node          Cell 预制体实例
-│     └─ btn_close                        Button
-│
-├─ MedicinePanel                          Node          药品选择（挂载 ItemPickerPanel.ts，结构同 SeedPanel）
-│
-├─ BackpackPanel                          Node          背包（挂载 BackpackPanel.ts）
-│  └─ Panel
-│     ├─ header / toolbar                               分类 tab：tab / tab-001 / tab-002 / tab-003 / tab-004
-│     │                                                 = 全部 / 种子 / 果实 / 化肥 / 药品
-│     ├─ ScrollView/view/content          Node          CellItem 预制体实例
-│     └─ footer
-│
-└─ ShopPanel                              Node          商店（挂载 ShopPanel.ts）
-   └─ Panel
-      ├─ header
-      ├─ toolbar                                        分类 tab：tab / tab-001 / tab-002
-      │                                                 = 种子 / 化肥 / 药品
-      ├─ ScrollView/view/content          Node          ShopItem 预制体实例
-      └─ footer
+├─ WeatherHud                    Node            ← 挂载 WeatherHud.ts
+├─ ToolCursorLayer               Node            工具光标层
+├─ ToolEffectLayer               Node            兜底动画模板层
+├─ TopBar                        Node            玩家信息栏
+├─ LeftBar                       Node            左侧功能栏
+├─ RightBar                      Node            右侧栏（占位）
+├─ Toast                         Node            ← 挂载 Toast.ts
+├─ SoilInfoPanel                 Node            ← 挂载 SoilInfoPanel.ts       [默认 active=false]
+├─ FertilizePanel                Node            ← 挂载 FertilizePanel.ts      [默认 active=false]
+├─ SeedPanel                     Node            ← 挂载 ItemPickerPanel.ts     [默认 active=false]
+├─ PesticidePanel                Node            ← 挂载 ItemPickerPanel.ts     [默认 active=false]
+├─ BackpackPanel                 Node            ← 挂载 BackpackPanel.ts       [默认 active=false]
+├─ ShopPanel                     Node            ← 挂载 ShopPanel.ts           [默认 active=false]
+├─ Buy                           Node            ← 挂载 BuyPanel.ts            [默认 active=false]
+├─ Sell                          Node            ← 挂载 SellPanel.ts           [默认 active=false]
+└─ WaterPrompt                   Node            ← 挂载 WaterPrompt.ts         [默认 active=false]
 ```
 
 ---
 
-## 2. LandPlot 土地预制体
+## 2. GameRoot（Canvas 根节点）
 
-路径建议：`assets/resources/farm/prefabs/LandPlot.prefab`（挂 `LandPlot.ts`）。
+### 挂载脚本：`GameRoot.ts`
 
-```
-LandPlot
-├─ soil                     Sprite    土块图（6 列 × 4 状态）
-│
-├─ states                   Node      土块状态动画（代码只切 active）
-│  ├─ fx_watering           Node      浇水动画
-│  ├─ fx_shovel             Node      铲地 / 初始化土块动画
-│  ├─ fx_fertilize          Node      施肥动画
-│  ├─ fx_harvest            Node      采摘动画
-│  ├─ fx_dry                Node      缺水（常驻显示，由代码按状态唤醒）
-│  └─ fx_lowfert            Node      缺肥（常驻显示）
-│
-├─ crop                     Node      作物（有作物时常驻，成熟后隐藏）
-│  ├─ stage_1               Sprite    第 1 阶段图（{cropId}-01）
-│  ├─ stage_2               Sprite    第 2 阶段图（{cropId}-02）
-│  ├─ stage_3               Sprite    第 3 阶段图（{cropId}-03）
-│  └─ growth                Node      成长进度条（成长值 0~100）
-│     ├─ bg                 Sprite
-│     ├─ fill               Sprite
-│     └─ lb_growth          Label     成长值 / 「可采摘」
-│
-├─ pest                     Node      病虫害（常驻显示）
-│  ├─ fx_pest               Node      害虫动画
-│  └─ fx_disease            Node      病害动画
-│
-├─ mature                   Node      成熟表现（成熟后唤醒）
-│  ├─ fx_mature             Node      成熟 / 可采摘动画（成熟瞬间播一次）
-│  └─ lb_mature             Label     「西红柿 ×10」
-│
-├─ lock                     Node      未解锁（未解锁时唤醒）
-│  ├─ icon_lock             Sprite    锁图标
-│  ├─ lb_price              Label     解锁价格
-│  └─ fx_unlock             Node      可解锁时的动画（金币+等级满足）+ 解锁成功动画
-│
-└─ notify                   Node      文字提醒（今日播种次数用尽等）
-   └─ label                 Label
-```
+### @property 拖绑清单
 
-### LandPlot 组件属性（属性检查器可调）
+| 属性名 | 类型 | 拖入节点 | 备注 |
+|--------|------|----------|------|
+| `landsNode` | Node | `lands` | 土地根节点 |
+| `leftBar` | Node | `LeftBar` | 左侧工具栏 |
+| `backpackButton` | Node | `LeftBar > BackpackBtn` | 可留空，代码按名字找 |
+| `shopButton` | Node | `LeftBar > ShopBtn` | 可留空，代码按名字找 |
+| `backpackPanelNode` | Node | `BackpackPanel` | 可留空 |
+| `shopPanelNode` | Node | `ShopPanel` | 可留空 |
+| `buyPanelNode` | Node | `Buy` | 可留空 |
+| `sellPanelNode` | Node | `Sell` | 可留空 |
+| `goldLabelNode` | Node | `TopBar > CoinsLabel` | 可留空 |
+| `toastNode` | Node | `Toast` | 可留空 |
+| `weatherHudNode` | Node | `WeatherHud` | 可留空 |
+| `soilInfoNode` | Node | `SoilInfoPanel` | 可留空 |
+| `waterPromptNode` | Node | `WaterPrompt` | 可留空 |
+| `fertilizePanelNode` | Node | `FertilizePanel` | 可留空 |
+| `seedPanelNode` | Node | `SeedPanel` | 可留空 |
+| `pesticidePanelNode` | Node | `PesticidePanel` | 可留空 |
 
-| 属性 | 默认 | 说明 |
-|---|---|---|
-| `soil` | — | 土块 Sprite |
-| `soilPathPattern` | `farm/lands_{state}1/locked_{col}{state}/spriteFrame` | 贴图路径模板，占位符 `{state}` `{col}` |
-| `cropNode` / `stage1..3` | — | 作物三阶段图 |
-| `growthBar` / `growthFill` / `growthFillMaxWidth` | 0 | 进度条；`growthFillMaxWidth>0` 时按宽度缩放，否则用 `fillRange` |
-| `pestFx` / `diseaseFx` / `dryFx` / `lowFertFx` | — | 状态动画节点 |
-| `matureNode` / `matureFx` / `matureLabel` | — | 成熟表现 |
-| `lockNode` / `lockPriceLabel` / `unlockableFx` | — | 未解锁 |
-| `notifyNode` / `notifyLabel` | — | 文字提醒 |
-| `fertilityAlertGap` | 0 | 缺肥阈值；**0 = 用服务端配置（默认 10 点）**，>0 时覆盖 |
-| `moistureAlertGap` | 0 | 缺水阈值；同上 |
+> 所有 `@property` 都可留空——代码会按名字递归查找（`findNode`）。但 **建议拖绑** 以避免同名节点误匹配。
+
+### 运行时按名字查找的节点（代码自动绑定）
+
+| 查找名 | 用途 | 必需 |
+|--------|------|------|
+| `CoinsLabel` / `gold_hud` | 金币数字 Label | ✅ |
+| `LevelLabel` | 等级 Label | 可选 |
+| `DiamondsLabel` | 钻石 Label | 可选 |
+| `EnergyLabel` | 体力 Label | 可选 |
+| `Toast` | Toast 节点 | ✅ |
+| `lands` | 土地根节点 | ✅ |
+| `ToolCursorLayer` | 工具光标层 | 可选 |
+| `ToolEffectLayer` | 特效模板层 | 可选 |
+| `SoilInfoPanel` | 土壤信息面板 | ✅ |
+| `WaterPrompt` | 浇水次数框 | ✅ |
+| `FertilizePanel` | 施肥面板 | ✅ |
+| `SeedPanel` | 种子选择面板 | ✅ |
+| `PesticidePanel` / `MedicinePanel` | 药剂选择面板 | ✅ |
+| `WeatherHud` | 天气栏 | ✅ |
+| `LeftBar` / `LefttBar` | 左侧栏 | ✅ |
+| `BackpackPanel` | 背包面板 | ✅ |
+| `ShopPanel` | 商店面板 | ✅ |
+| `Buy` | 购买确认面板 | 可选（兜底直接购买） |
+| `Sell` | 出售确认面板 | 可选（兜底直接出售） |
 
 ---
 
-## 3. 交互流程（代码只负责唤醒）
+## 3. LeftBar（左侧功能栏）
 
-| 操作 | 流程 |
-|---|---|
-| **浇水** | 点 LeftBar/Water → 弹 `WaterPrompt` 选次数 → 确认后 `ToolCursor` 跟随鼠标 → 点土块 → 发 `water` 命令 → 光标消失 + 播 `fx_watering`。再点一次 Water 取消 |
-| **铲子** | 点 Shovel → 光标跟随（**没有选择框**）→ 点土块 → 发 `shovel` 命令 → 播 `fx_shovel`（初始化土块） |
-| **施肥** | 点 Fertilizer → 弹 `FertilizePanel` → 点下面的肥料加入上面（已选则数量 +1，点上面的格子 -1）→ 可选「追加时间」→ 确认发 `fertilize` 命令 → 播 `fx_fertilize` |
-| **去商店** | 施肥框里点 `btn_shop` → 打开商店 → 关闭商店后**自动回到施肥框** |
-| **采摘** | 点 Harvest → 光标跟随 → 点成熟土块 → 发 `harvest` 命令 → 播 `fx_harvest` |
-| **播种** | 未选工具时点**空地** → 弹 `SeedPanel` → 选种子 → 发 `plant` 命令 |
-| **看土壤** | 未选工具时点**有作物的地**，或**双击**任意土块 → 开 `SoilInfoPanel`；点框外关闭 |
-| **解锁** | 未选工具时点**未解锁**的土块 → 金币+等级满足则发 `unlock_land`，否则 Toast 提示 |
-| **除虫/治病** | `SoilInfoPanel` 里出现 `btn_medicine` → 打开 `MedicinePanel` → 选药品 → 发 `apply_medicine` |
+```
+LeftBar                          Node + Widget(left, top, bottom)
+├─ BgSprite                      Sprite          背景图片
+├─ BackpackBtn                   Node + Button   背包按钮
+│  └─ Icon                       Sprite          图标（可选）
+├─ ShopBtn                       Node + Button   商店按钮
+├─ ShovelBtn                     Node + Button   铲子按钮
+├─ HarvestBtn                    Node + Button   采摘按钮
+├─ WaterBtn                      Node + Button   浇水按钮（点击弹 WaterPrompt）
+├─ FertilizerBtn                 Node + Button   施肥按钮
+├─ PesticideBtn                  Node + Button   药剂按钮（暂未使用）
+└─ expand                        Node + Button   展开/折叠按钮
+```
 
-面板内部（湿度/肥力/土壤健康进度条、作物适宜区间、生效肥料与剩余时间、病虫害等级、今日播种次数）全部由 `SoilInfoPanel.render()` 填值，节点在 Cocos 里摆好。
+### 交互说明
+
+| 按钮 | 点击行为 |
+|------|----------|
+| `BackpackBtn` | 关闭 ShopPanel（如果开着）→ 打开 BackpackPanel |
+| `ShopBtn` | 关闭 BackpackPanel（如果开着）→ 打开 ShopPanel |
+| `ShovelBtn` | 切换铲子工具 → 鼠标跟随铲子图标 → 点土地铲除作物 |
+| `HarvestBtn` | 切换采摘工具 → 鼠标跟随 → 点成熟土地采摘 |
+| `WaterBtn` | **直接弹出 WaterPrompt** → 确认后鼠标跟随水壶 → 点土地浇水 |
+| `FertilizerBtn` | 切换施肥工具 → 点土地弹出 FertilizePanel |
+| `expand` / `collapse` | 展开/折叠 LeftBar 动画（子按钮 x 位移） |
+
+> 代码兼容旧名称：`Water`、`Fertilizer`、`Harvest`、`Shovel` 也会被绑定。
 
 ---
 
-## 4. 资源清单补充
+## 4. TopBar（顶部状态栏）
 
-- 作物三阶段图：`<cropId>-01 / -02 / -03`（例如 `longan-01`），种子 `seed_<cropId>`，果实 `fruit_<cropId>`。
-- 化肥图标：`fert_<fertilizerId>`（如 `fert_npk_15`）；药品图标：`med_<medicineId>`（如 `med_fungicide_basic`）。
-- 图标全部放在 `assets/resources/textures/items/` 下；作物图放 `assets/resources/farm/crop/`。
+```
+TopBar                           Node + Widget(top, left, right)
+├─ BgSprite                      Sprite
+├─ PlayerInfoSection             Node
+│  ├─ LevelLabel                 Label           「Lv.1」
+│  ├─ ExpBar                     Node
+│  │  └─ Bar / fill              Sprite          经验条
+│  ├─ CoinsLabel                 Label           金币数字（代码写 string）
+│  ├─ DiamondsLabel              Label           钻石数字
+│  └─ EnergyLabel                Label           体力数字
+```
 
-## 5. 与服务端的关系
+---
 
-- 客户端不做任何权威计算：成长、品质、产量、天气、病虫害全部来自 `/api/v1/game/bootstrap` 的 `plots` / `world`。
-- 客户端每 15 秒用 `GET /game/bootstrap?catalog=0` 轮询刷新；进度条在两次快照之间按服务端给出的 `growthPerMinute` 做平滑插值（只影响观感）。
-- 所有写操作（播种/浇水/施肥/用药/收获/铲除/解锁）统一走 `POST /game/commands`，带 `commandId` 幂等。
+## 5. WeatherHud（天气栏）
+
+### 挂载脚本：`WeatherHud.ts`
+
+```
+WeatherHud                       Node + WeatherHud.ts
+├─ lb_info                       Label           「季节：夏    天气：晴    温度：28.4℃」
+```
+
+### @property 拖绑
+
+| 属性名 | 类型 | 拖入节点 | 备注 |
+|--------|------|----------|------|
+| `infoLabel` | Label | `lb_info` | 单 Label 模式（推荐） |
+| `seasonLabel` | Label | — | 旧场景兼容，可留空 |
+| `weatherLabel` | Label | — | 同上 |
+| `temperatureLabel` | Label | — | 同上 |
+| `dayLabel` | Label | — | 同上 |
+
+---
+
+## 6. Toast（飘字提示）
+
+### 挂载脚本：`Toast.ts`
+
+```
+Toast                            Node + Toast.ts + UIOpacity
+└─ ToastLabel                    Label           提示文字
+```
+
+> 默认 `active = false`，代码调用 `show()` 时自动唤醒。
+
+---
+
+## 7. BackpackPanel（背包面板）
+
+### 挂载脚本：`BackpackPanel.ts`
+
+```
+BackpackPanel                    Node + BackpackPanel.ts + Widget(四边=0) + BlockInputEvents
+├─ Header                        Node
+│  ├─ Title                      Label           「背包」
+│  └─ CloseBth                   Node + Button   关闭按钮
+├─ Toolbar                    Node
+│  ├─ left                    Node
+│  │  ├─ sort                 Label           「排序」
+│  │  ├─ time                 Node + Button   时间排序
+   │  │  │  └─ Label             Label           「时间」
+│  │  └─ name                 Node + Button   名称排序
+   │  │     └─ Label             Label           「名称」
+│  └─ right                   Node
+   │     ├─ all                  Node + Button   全部筛选
+   │     ├─ fruit                Node + Button   果实筛选
+   │     ├─ seed                 Node + Button   种子筛选
+   │     ├─ fertilizer           Node + Button   化肥筛选
+   │     └─ pesticide            Node + Button   药剂筛选
+├─ ScrollView                 ScrollView
+│  └─ view                    Node + Mask
+   │     └─ content              Node + Layout   列表容器（放 BackpackItem 预制体实例）
+├─ Footer                     Node
+│  └─ lb_hint                 Label           「共 N 件物品」
+├─ Separator_1                Sprite          分割线
+├─ Separator_2                Sprite          分割线
+├─ Separator_3                Sprite          分割线
+└─ Border                     Sprite          边框
+```
+
+### 运行时查找
+
+| 查找路径 | 用途 |
+|----------|------|
+| `Panel` | 面板容器（做缩放/透明动画） |
+| `Header` / `header` | 头部 → 取 `CloseBth` 绑关闭 |
+| `Toolbar` / `toolbar` | 工具栏 → 取 `left`/`right` 子按钮 |
+| `ScrollView` | 滚动容器 → 取 `view > content` |
+| `Footer` / `footer` | 底部 → 取 Label |
+| `right > all/fruit/seed/fertilizer/pesticide` | 分类筛选按钮 |
+| `left > time/name` | 排序按钮 |
+
+### 交互流程
+
+```
+BackpackBtn 点击
+  → BackpackPanel.open()
+  → content 填充 BackpackItem 预制体实例
+  → 点 right 按钮 → 按类别筛选
+  → 点 left 按钮 → 按时间/名称排序
+  → 点 BackpackItem 的 btn_buy（出售按钮）
+    → 弹出 SellPanel（如果场景有 Sell 节点）
+    → 否则直接出售 1 个
+  → 点 BackpackItem 格子本身 → Toast 显示详情
+  → 点 CloseBth / 点面板外部 → close()
+```
+
+---
+
+## 8. ShopPanel（商店面板）
+
+### 挂载脚本：`ShopPanel.ts`
+
+```
+ShopPanel                        Node + ShopPanel.ts + Widget(四边=0) + BlockInputEvents
+
+├─ Header                     Node
+│  ├─ Title                   Label           「商店」
+│  └─ CloseBth                Node + Button   关闭按钮
+├─ Toolbar                    Node
+│  └─ left                    Node
+   │     ├─ sort                 Label           「排序」
+   │     ├─ time                 Node + Button   时间（价格）排序
+   │     │  └─ Label             Label           「时间」
+   │     └─ name                 Node + Button   名称排序
+   │        └─ Label             Label           「名称」
+├─ ScrollView                 ScrollView
+│  └─ view                    Node + Mask
+   │     └─ content              Node + Layout   列表容器（放 ShopItem 预制体实例）
+├─ Footer                     Node
+│  └─ lb_hint                 Label           「金币：N · 在售 M 种」
+├─ Separator_1~3              Sprite
+└─ Border                     Sprite
+```
+
+### 交互流程
+
+```
+ShopBtn 点击
+  → ShopPanel.open()
+  → content 填充 ShopItem 预制体实例（按当前分类）
+  → 点 time/name → 排序切换
+  → 点 ShopItem 的 btn_buy（购买按钮）
+    → 弹出 BuyPanel（如果场景有 Buy 节点）
+    → 否则直接购买 1 个
+  → 点 CloseBth / 点面板外部 → close()
+  → close() 触发 onClose 回调（FertilizePanel 恢复显示）
+```
+
+---
+
+## 9. Buy（购买确认面板）
+
+### 挂载脚本：`BuyPanel.ts`
+
+```
+Buy                              Node + BuyPanel.ts + Widget(四边=0) + BlockInputEvents
+├─ Header                        Node
+│  ├─ header                     Sprite          头部背景
+│  ├─ close                      Node + Button   关闭按钮
+│  └─ title                      Label           「购买」
+└─ Body                          Node
+   ├─ Icon                       Node
+   │  └─ ShopItem                Node + ShopItem.ts（显示商品信息）
+   │     ├─ cell_bg              Sprite
+   │     ├─ icon                 Sprite
+   │     ├─ lb_name              Label
+   │     ├─ price                Node            ← open() 时自动 active=false
+   │     └─ buy                  Node            ← open() 时自动 active=false
+   ├─ numbers                    Node
+   │  ├─ bg                      Sprite          背景
+   │  ├─ minus                   Node + Button   减号
+   │  ├─ munber                  Node            数量显示区（双击可输入）
+   │  │  └─ number               Label           默认「1」
+   │  ├─ plus                    Node + Button   加号
+   │  ├─ lb_name-001             Label           「单价：5 金币」
+   │  └─ lb_name-002             Label           「总价：5 金币」
+   ├─ cancel                     Node + Button
+   │  └─ label                   Label           「取消」
+   └─ confirm                    Node + Button
+      └─ label                  Label           「确认」
+```
+
+### @property 拖绑
+
+| 属性名 | 类型 | 拖入节点 |
+|--------|------|----------|
+| `shopItemNode` | Node | `Body > Icon > ShopItem` |
+| `minusBtn` | Node | `Body > numbers > minus` |
+| `plusBtn` | Node | `Body > numbers > plus` |
+| `numberNode` | Node | `Body > numbers > munber`（或其子节点 `number`） |
+| `unitPriceLabel` | Label | `Body > numbers > lb_name-001` 上的 Label |
+| `totalPriceLabel` | Label | `Body > numbers > lb_name-002` 上的 Label |
+| `cancelBtn` | Node | `Body > cancel` |
+| `confirmBtn` | Node | `Body > confirm` |
+| `closeBtn` | Node | `Header > close` |
+
+### 运行时按名字查找
+
+| 查找名 | 用途 |
+|--------|------|
+| `price` | ShopItem 内的价格节点 → `active = false` |
+| `buy` | ShopItem 内的购买按钮节点 → `active = false` |
+| `munber` | 双击弹出 EditBox 输入 |
+
+### 交互流程
+
+```
+ShopItem.btn_buy 点击
+  → BuyPanel.open(shopDef)
+  → ShopItem 隐藏 price/buy 节点
+  → 显示商品信息 + 单价/总价
+  → minus → quantity-- (最小1)
+  → plus → quantity++ (最大=金币/单价)
+  → 双击 munber → EditBox 手动输入
+  → cancel / close / 点外部 → close()
+  → confirm → 发送 buy_item 命令 → close() + 刷新 ShopPanel/BackpackPanel/HUD
+```
+
+---
+
+## 10. Sell（出售确认面板）
+
+### 挂载脚本：`SellPanel.ts`
+
+> 结构与 Buy 完全相同，区别：ShopItem 换成 BackpackItem，数量上限 = 背包持有数。
+
+```
+Sell                             Node + SellPanel.ts + Widget(四边=0) + BlockInputEvents
+├─ Header                        Node
+│  ├─ header                     Sprite
+│  ├─ close                      Node + Button
+│  └─ title                      Label           「出售」
+└─ Body                          Node
+   ├─ Icon                       Node
+   │  └─ BackpackItem            Node + BackpackItem.ts
+   │     ├─ cell_bg              Sprite
+   │     ├─ icon                 Sprite
+   │     ├─ lb_name              Label
+   │     ├─ lb_count             Label
+   │     ├─ price                Node            ← open() 时自动 active=false
+   │     └─ buy                  Node            ← open() 时自动 active=false
+   ├─ numbers                    Node
+   │  ├─ bg                      Sprite
+   │  ├─ minus                   Node + Button
+   │  ├─ munber                  Node
+   │  │  └─ number               Label           默认「1」
+   │  ├─ plus                    Node + Button
+   │  ├─ lb_name-001             Label           「单价：X 金币」
+   │  └─ lb_name-002             Label           「总价：X 金币」
+   ├─ cancel                     Node + Button
+   │  └─ label                   Label           「取消」
+   └─ confirm                    Node + Button
+      └─ label                  Label           「确认」
+```
+
+### @property 拖绑
+
+| 属性名 | 类型 | 拖入节点 |
+|--------|------|----------|
+| `backpackItemNode` | Node | `Body > Icon > BackpackItem` |
+| `minusBtn` | Node | `Body > numbers > minus` |
+| `plusBtn` | Node | `Body > numbers > plus` |
+| `numberNode` | Node | `Body > numbers > munber` |
+| `unitPriceLabel` | Label | `Body > numbers > lb_name-001` 上的 Label |
+| `totalPriceLabel` | Label | `Body > numbers > lb_name-002` 上的 Label |
+| `cancelBtn` | Node | `Body > cancel` |
+| `confirmBtn` | Node | `Body > confirm` |
+| `closeBtn` | Node | `Header > close` |
+
+---
+
+## 11. WaterPrompt（浇水次数框）
+
+### 挂载脚本：`WaterPrompt.ts`
+
+```
+WaterPrompt                      Node + WaterPrompt.ts + Widget(四边=0) + BlockInputEvents
+├─ Header                        Node
+│  ├─ header                     Sprite
+│  ├─ close                      Node + Button   关闭按钮
+│  └─ title                      Label           「浇 水」
+└─ Body                          Node
+   ├─ numbers                    Node
+   │  ├─ minus                   Node + Button   减号
+   │  ├─ munber                  Node            数量显示区
+   │  │  └─ number               Label           默认「1」
+   │  └─ plus                    Node + Button   加号
+   ├─ cancel                     Node + Button
+   │  └─ label                   Label           「取消」
+   └─ confirm                    Node + Button
+      └─ label                  Label           「确认」
+```
+
+### @property 拖绑
+
+| 属性名 | 类型 | 拖入节点 |
+|--------|------|----------|
+| `minusBtn` | Node | `Body > numbers > minus` |
+| `plusBtn` | Node | `Body > numbers > plus` |
+| `numberNode` | Node | `Body > numbers > munber`（或其子 `number`） |
+| `confirmButton` | Node | `Body > confirm` |
+| `closeButton` | Node | `Header > close` |
+| `cancelBtn` | Node | `Body > cancel` |
+
+### 交互流程
+
+```
+LeftBar.WaterBtn 点击
+  → WaterPrompt.open()
+  → minus → times-- (最小1)
+  → plus → times++ (最大 WATER_MAX_TIMES=10)
+  → cancel / close / 点外部 → close()
+  → confirm → onConfirm(times)
+    → LandView 设为 water 工具
+    → 鼠标跟随水壶图标
+    → 点土地 → 发送 water 命令 → 播浇水动画 → 光标消失
+```
+
+---
+
+## 12. SoilInfoPanel（土壤信息面板）
+
+### 挂载脚本：`SoilInfoPanel.ts`
+
+```
+SoilInfoPanel                    Node + SoilInfoPanel.ts + Widget(四边=0) + BlockInputEvents
+└─ Panel                         Node + Sprite
+   ├─ header                     Node
+   │  ├─ Title                   Label           「第 N 块土地」
+   │  └─ CloseBth                Node + Button   关闭按钮
+   ├─ ScrollView                 ScrollView
+   │  └─ view                    Node + Mask
+   │     └─ content              Node
+   │        ├─ row_moisture      Node
+   │        │  ├─ lb_title       Label           「湿度」
+   │        │  ├─ Bar/bg         Sprite
+   │        │  ├─ Bar/fill       Sprite          代码写 fillRange
+   │        │  ├─ Bar/range      Sprite          作物适宜区间（有作物时唤醒）
+   │        │  └─ lb_value       Label           湿度数值
+   │        ├─ row_fertility     Node            结构同 row_moisture
+   │        ├─ row_soil_health   Node
+   │        │  ├─ Bar/fill       Sprite
+   │        │  └─ lb_value       Label
+   │        ├─ row_crop          Node
+   │        │  └─ lb_crop        Label           作物名/阶段
+   │        ├─ row_quality       Node
+   │        │  └─ lb_quality     Label           品质
+   │        ├─ row_yield         Node
+   │        │  └─ lb_yield       Label           产量
+   │        ├─ row_plant_count   Node
+   │        │  └─ lb_plant_count Label           今日播种次数
+   │        ├─ row_fertilizer    Node
+   │        │  └─ lb_fertilizer  Label           生效肥料
+   │        ├─ row_medicine      Node
+   │        │  └─ lb_medicine    Label           生效药剂
+   │        ├─ row_event         Node
+   │        │  └─ lb_event       Label           病虫害/杂草
+   │        └─ btn_medicine      Node + Button   「处理病虫害」→ 打开 PesticidePanel
+   └─ footer                     Node
+      └─ lb_footer               Label
+```
+
+### @property 拖绑
+
+| 属性名 | 类型 | 拖入节点 | 备注 |
+|--------|------|----------|------|
+| `panelNode` | Node | `Panel` | |
+| `titleLabel` | Label | `header > Title` | |
+| `moistureBar` | Node | `row_moisture > Bar` | |
+| `moistureFill` | Sprite | `row_moisture > Bar > fill` | |
+| `moistureRange` | Node | `row_moisture > Bar > range` | 有作物时唤醒 |
+| `moistureValue` | Label | `row_moisture > lb_value` | |
+| `fertilityBar` | Node | `row_fertility > Bar` | |
+| `fertilityFill` | Sprite | `row_fertility > Bar > fill` | |
+| `fertilityRange` | Node | `row_fertility > Bar > range` | |
+| `fertilityValue` | Label | `row_fertility > lb_value` | |
+| `soilHealthFill` | Sprite | `row_soil_health > Bar > fill` | |
+| `soilHealthValue` | Label | `row_soil_health > lb_value` | |
+| `cropLabel` | Label | `row_crop > lb_crop` | |
+| `qualityLabel` | Label | `row_quality > lb_quality` | |
+| `yieldLabel` | Label | `row_yield > lb_yield` | |
+| `plantCountLabel` | Label | `row_plant_count > lb_plant_count` | |
+| `fertilizerLabel` | Label | `row_fertilizer > lb_fertilizer` | |
+| `medicineLabel` | Label | `row_medicine > lb_medicine` | |
+| `eventLabel` | Label | `row_event > lb_event` | |
+| `medicineButton` | Node | `btn_medicine` | 有病虫害时唤醒 |
+| `scrollView` | ScrollView | `ScrollView` | |
+| `fertilityAlertGap` | number | — | 0=用服务端值 |
+| `moistureAlertGap` | number | — | 0=用服务端值 |
+
+### 触发方式
+
+```
+双击任意土地 / 单击有作物的土地
+  → SoilInfoPanel.open(plot, farmModel)
+  → 填充所有 Label + 进度条
+  → 有作物时唤醒 moistureRange / fertilityRange
+  → 有病虫害/杂草时唤醒 btn_medicine
+  → btn_medicine 点击 → PesticidePanel 选择药剂
+  → CloseBth / 点外部 → close()
+```
+
+---
+
+## 13. FertilizePanel（施肥面板）
+
+### 挂载脚本：`FertilizePanel.ts`
+
+```
+FertilizePanel                   Node + FertilizePanel.ts + Widget(四边=0) + BlockInputEvents
+└─ Panel                         Node + Sprite
+   ├─ header                     Node
+   │  ├─ Title                   Label           「给第 N 块土地施肥」
+   │  └─ CloseBth                Node + Button
+   ├─ top                        Node            已选肥料
+   │  └─ ScrollView
+   │     └─ view
+   │        └─ content           Node + Layout   已选肥料列表（Cell 预制体实例）
+   ├─ bottom                     Node            背包已有肥料
+   │  └─ ScrollView
+   │     └─ view
+   │        └─ content           Node + Layout   背包肥料列表（Cell 预制体实例）
+   ├─ toggle_append              Node            追加时间开关（子节点 checkmark）
+   ├─ lb_hint                    Label           已选提示
+   ├─ btn_shop                   Node + Button   跳转商店
+   └─ btn_confirm                Node + Button   确认施肥
+```
+
+### @property 拖绑
+
+| 属性名 | 类型 | 拖入节点 |
+|--------|------|----------|
+| `topContent` | Node | `top > ScrollView > view > content` |
+| `bottomContent` | Node | `bottom > ScrollView > view > content` |
+| `appendToggle` | Node | `toggle_append` |
+| `shopButton` | Node | `btn_shop` |
+| `confirmButton` | Node | `btn_confirm` |
+| `closeButton` | Node | `header > CloseBth` |
+| `titleLabel` | Label | `header > Title` |
+| `hintLabel` | Label | `lb_hint` |
+
+### 交互流程
+
+```
+LeftBar.FertilizerBtn → 点土地
+  → FertilizePanel.open(plotId)
+  → bottom 显示背包里的肥料
+  → 点 bottom 肥料 → 加入 top（已选则+1）
+  → 点 top 格子 → 数量-1（=0则移除）
+  → toggle_append → 切换追加时间模式
+  → btn_shop → 隐藏自己，打开 ShopPanel（关闭商店后自动恢复）
+  → btn_confirm → 发送 fertilize 命令 → close()
+  → CloseBth / 点外部 → close()
+```
+
+---
+
+## 14. SeedPanel（种子选择面板）
+
+### 挂载脚本：`ItemPickerPanel.ts`
+
+```
+SeedPanel                        Node + ItemPickerPanel.ts + Widget(四边=0) + BlockInputEvents
+├─ Header                        Node
+│  ├─ Title                      Label           「选择种子」
+│  └─ CloseBth                   Node + Button   关闭按钮
+├─ Toolbar                       Node
+│  └─ left                       Node
+│     ├─ sort                    Label           「排序」
+│     ├─ time                    Node
+│     │  └─ Label                Label           「生长时间」
+│     └─ name                    Node
+│        └─ Label                Label           「种子名称」
+├─ ScrollView                    ScrollView
+│  └─ view                       Node + Mask
+│     └─ content                 Node + Layout   BaseItem 预制体实例
+├─ Footer                        Node
+│  └─ lb_hint                    Label           「点击种子即播种」
+├─ Separator_1~3                 Sprite
+└─ Border                        Sprite
+```
+
+### @property 拖绑
+
+| 属性名 | 类型 | 拖入节点 | 备注 |
+|--------|------|----------|------|
+| `contentNode` | Node | `ScrollView > view > content` | 自动查找兜底 |
+| `closeButton` | Node | `Header > CloseBth` | 自动查找兜底 |
+| `titleLabel` | Label | `Header > Title` | 自动查找兜底 |
+| `hintLabel` | Label | `Footer > lb_hint` | 自动查找兜底 |
+
+### 触发方式
+
+```
+点击空地（无作物、已解锁）
+  → LandView.openSeedPicker(plotId)
+  → SeedPanel.open("选择种子", "点击种子即播种", rows, callback)
+  → content 填充 BaseItem 预制体实例
+  → 点 BaseItem.btn_select → close() → 发送 plant 命令
+  → CloseBth / 点外部 → close()
+```
+
+---
+
+## 15. PesticidePanel（药剂选择面板）
+
+### 挂载脚本：`ItemPickerPanel.ts`（与 SeedPanel 相同脚本）
+
+> 结构与 SeedPanel 完全相同，只是标题和物品不同。
+
+```
+PesticidePanel                   Node + ItemPickerPanel.ts + Widget(四边=0) + BlockInputEvents
+├─ Header                        Node
+│  ├─ Title                      Label           「处理病虫害」
+│  └─ CloseBth                   Node + Button
+├─ Toolbar                       Node
+│  └─ left                       Node
+│     ├─ sort                    Label
+│     ├─ time                    Node
+│     │  └─ Label                Label           「效果」
+│     └─ name                    Node
+│        └─ Label                Label           「名称」
+├─ ScrollView                    ScrollView
+│  └─ view
+│     └─ content                 Node + Layout   BaseItem 预制体实例
+├─ Footer                        Node
+│  └─ lb_hint                    Label
+├─ Separator_1~3                 Sprite
+└─ Border                        Sprite
+```
+
+### 触发方式
+
+```
+SoilInfoPanel > btn_medicine 点击
+  → LandView.openMedicinePicker(plotId)
+  → PesticidePanel.open("处理病虫害", "选择要使用的药剂", rows, callback)
+  → 点 BaseItem.btn_select → close() → 发送 apply_medicine 命令
+```
+
+---
+
+## 16. 预制体
+
+### 16.1 BackpackItem（背包物品单元格）
+
+**挂载脚本：`BackpackItem.ts`**
+
+```
+BackpackItem                     Node + BackpackItem.ts + UITransform(97.33 × 97.33)
+├─ cell_bg                       Sprite          单元格背景（果实时根据品质变色）
+├─ icon                          Sprite          物品图标
+├─ lb_name                       Label           物品名称
+├─ lb_count                      Label           「剩余:10」
+├─ price                         Node
+│  ├─ Sprite                     Sprite          金币图标（固定）
+│  └─ lb_price                   Label           价格数字
+└─ buy                           Node
+   ├─ btn_buy                    Node + Button   出售按钮
+   └─ lb_buy_text                Label           「出售」
+```
+
+**代码按名字查找**：`cell_bg`, `icon`, `lb_name`, `lb_count`, `lb_price`, `btn_buy`, `lb_buy_text`
+
+**品质颜色规则**（仅 `category === 'fruit'` 时生效）：
+
+| 品质等级 | cell_bg 颜色 |
+|----------|-------------|
+| 精品 | RGB(255,215,0) 金色 |
+| 优良 | RGB(100,200,100) 绿色 |
+| 普通 | RGB(200,200,200) 灰白 |
+| 合格 | RGB(150,150,200) 淡蓝 |
+| 不合格 | RGB(200,100,100) 淡红 |
+| 非果实 | Color.WHITE 不变色 |
+
+---
+
+### 16.2 ShopItem（商店物品单元格）
+
+**挂载脚本：`ShopItem.ts`**
+
+```
+ShopItem                         Node + ShopItem.ts + UITransform(97.33 × 97.33)
+├─ cell_bg                       Sprite          单元格背景（不变色，始终白色）
+├─ icon                          Sprite          物品图标
+├─ lb_name                       Label           物品名称
+├─ price                         Node
+│  ├─ Sprite                     Sprite          金币图标
+│  └─ lb_price                   Label           价格数字
+└─ buy                           Node
+   ├─ btn_buy                    Node + Button   购买按钮
+   └─ lb_buy_text                Label           「购买」
+```
+
+**代码按名字查找**：`cell_bg`, `icon`, `lb_name`, `lb_price`, `btn_buy`, `lb_buy_text`
+
+---
+
+### 16.3 BaseItem（通用选择单元格）
+
+**挂载脚本：`BaseItem.ts`**
+
+```
+BaseItem                         Node + BaseItem.ts + UITransform(97.33 × 97.33)
+├─ cell_bg                       Sprite          单元格背景（不变色）
+├─ icon                          Sprite          物品图标
+├─ lb_name                       Label           物品名称
+├─ lb_count                      Label           「剩余:10」
+└─ select                        Node
+   ├─ btn_select                 Node + Button   选择按钮
+   └─ Label                      Label           「选择」
+```
+
+**代码按名字查找**：`cell_bg`, `icon`, `lb_name`, `lb_count`, `btn_select`
+
+---
+
+### 16.4 LandPlot（土地预制体）
+
+**挂载脚本：`LandPlot.ts`**
+
+```
+LandPlot (Prefab)                Node + LandPlot.ts
+├─ soil                          Sprite          土块图
+├─ states                        Node            状态动画父节点
+│  ├─ fx_watering                Node + Animation
+│  ├─ fx_shovel                  Node + Animation
+│  ├─ fx_fertilize               Node + Animation
+│  ├─ fx_harvest                 Node + Animation
+│  ├─ fx_dry                     Node + Animation    缺水（代码按状态唤醒）
+│  └─ fx_lowfert                 Node + Animation    缺肥
+├─ crop                          Node            作物（有作物时唤醒，成熟后隐藏）
+│  ├─ stage_1                    Sprite          第1阶段图
+│  ├─ stage_2                    Sprite          第2阶段图
+│  ├─ stage_3                    Sprite          第3阶段图
+│  └─ growth                     Node            成长进度条
+│     ├─ bg                      Sprite
+│     ├─ fill                    Sprite          fillRange 或 width 缩放
+│     └─ lb_growth               Label           成长值
+├─ pest                          Node            病虫害
+│  ├─ fx_pest                    Node + Animation
+│  └─ fx_disease                 Node + Animation
+├─ mature                        Node            成熟（成熟后唤醒）
+│  ├─ fx_mature                  Node + Animation
+│  └─ lb_mature                  Label           「西红柿 ×10」
+├─ lock                          Node            未解锁（未解锁时唤醒）
+│  ├─ icon_lock                  Sprite
+│  ├─ lb_price                   Label           解锁价格
+│  └─ fx_unlock                  Node + Animation
+└─ notify                        Node            文字提醒
+   └─ label                      Label
+```
+
+### @property 拖绑
+
+| 属性名 | 类型 | 拖入 | 备注 |
+|--------|------|------|------|
+| `soil` | Sprite | `soil` | 自动 |
+| `soilPathPattern` | string | — | `farm/lands_{state}1/locked_{col}{state}/spriteFrame` |
+| `cropNode` | Node | `crop` | 自动 |
+| `stage1` | Sprite | `crop > stage_1` | 自动 |
+| `stage2` | Sprite | `crop > stage_2` | 自动 |
+| `stage3` | Sprite | `crop > stage_3` | 自动 |
+| `growthBar` | Node | `crop > growth` | 自动 |
+| `growthFill` | Sprite | `crop > growth > fill` | 自动 |
+| `growthFillMaxWidth` | number | — | 0=用 fillRange |
+| `growthLabel` | Label | `crop > growth > lb_growth` | 自动 |
+| `pestFx` | Node | `pest > fx_pest` | 自动 |
+| `diseaseFx` | Node | `pest > fx_disease` | 自动 |
+| `dryFx` | Node | `states > fx_dry` | 自动 |
+| `lowFertFx` | Node | `states > fx_lowfert` | 自动 |
+| `matureNode` | Node | `mature` | 自动 |
+| `matureFx` | Node | `mature > fx_mature` | 自动 |
+| `matureLabel` | Label | `mature > lb_mature` | 自动 |
+| `lockNode` | Node | `lock` | 自动 |
+| `lockPriceLabel` | Label | `lock > lb_price` | 自动 |
+| `unlockableFx` | Node | `lock > fx_unlock` | 自动 |
+| `notifyNode` | Node | `notify` | 自动 |
+| `notifyLabel` | Label | `notify > label` | 自动 |
+| `statesNode` | Node | `states` | 自动 |
+| `fertilityAlertGap` | number | — | 0=跟随服务端 |
+| `moistureAlertGap` | number | — | 0=跟随服务端 |
+
+---
+
+## 17. 完整交互流程图
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        LeftBar 按钮                              │
+├──────────┬───────────┬──────────┬──────────┬──────────┬──────────┤
+│BackpackBtn│ ShopBtn  │ WaterBtn │Fertilizer│HarvestBtn│ShovelBtn │
+│  Btn     │          │          │  Btn     │          │          │
+├──────────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 打开     │ 打开      │ 弹出     │ 切换     │ 切换     │ 切换     │
+│ Backpack │ Shop      │ Water    │ 施肥     │ 采摘     │ 铲子     │
+│ Panel    │ Panel     │ Prompt   │ 工具     │ 工具     │ 工具     │
+└────┬─────┴─────┬─────┴────┬─────┴────┬─────┴────┬─────┴────┬─────┘
+     │           │          │          │          │          │
+     ▼           ▼          ▼          ▼          ▼          ▼
+┌─────────┐ ┌────────┐ ┌────────┐  鼠标跟随   鼠标跟随   鼠标跟随
+│Backpack │ │ Shop   │ │ Water  │  肥料图标   采摘图标   铲子图标
+│ Panel   │ │ Panel  │ │ Prompt │     │          │          │
+│         │ │        │ │        │     │          │          │
+│点出售按钮│ │点购买  │ │确认次数│     ▼          ▼          ▼
+│  ▼      │ │按钮    │ │  ▼     │  点土地     点成熟地   点有作物地
+│Sell     │ │  ▼     │ │鼠标跟随│  弹出       → harvest  → shovel
+│Panel    │ │Buy     │ │水壶图标│  Fertilize  命令       命令
+│         │ │Panel   │ │  ▼     │  Panel                │
+│确认出售 │ │        │ │点土地  │     │                   │
+│→ sell   │ │确认购买│ │→ water │  确认施肥               │
+│  命令   │ │→ buy   │ │ 命令   │  → fertilize           │
+│         │ │ 命令   │ │        │    命令                 │
+└─────────┘ └────────┘ └────────┘                        │
+                                                         │
+┌──────────────────────────────────────────────────────────────────┐
+│                       土地点击（无工具时）                         │
+├──────────────────┬───────────────────┬────────────────────────────┤
+│ 未解锁的土地      │ 有空地（已解锁）   │ 有作物的土地 / 双击任意地   │
+├──────────────────┼───────────────────┼────────────────────────────┤
+│ → unlock_land    │ → 弹出 SeedPanel  │ → 弹出 SoilInfoPanel       │
+│   命令           │   选种子 → plant   │   查看信息                 │
+│                  │   命令            │   点「处理病虫害」          │
+│                  │                   │   → PesticidePanel         │
+│                  │                   │   → apply_medicine 命令    │
+└──────────────────┴───────────────────┴────────────────────────────┘
+```
+
+---
+
+## 18. 常见陷阱
+
+| 陷阱 | 说明 |
+|------|------|
+| 面板忘记 `active=false` | 所有弹窗必须默认隐藏，否则一进入场景就全部弹出 |
+| Button 组件未挂 | 所有可点击节点必须有 Button 组件（代码会兜底 addComponent 但建议预挂） |
+| 节点名拼写不一致 | `CloseBth`（不是 CloseBtn）、`munber`（不是 number）等拼写必须与代码一致 |
+| ShopItem 内 price/buy 未隐藏 | BuyPanel.open() 会自动隐藏，但预制体里它们应默认 active=true（正常商店列表需要显示） |
+| ScrollView content 没有 Layout | 代码会 addComponent(Layout) 兜底，但建议预挂并设 spacingX/spacingY |
+| 土地列名 `lands_1` 不是 `land_1` | LandView 按 `lands_{row}` 查找行，行内按 `1..6` 或 `land_{col}` 查找列 |
+| LeftBar 按钮子节点放 Icon Sprite | 工具光标用 `getComponentInChildren(Sprite).spriteFrame` 取图标，按钮内必须有 Sprite |

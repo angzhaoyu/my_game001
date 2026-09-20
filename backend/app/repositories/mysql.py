@@ -104,7 +104,8 @@ class MySQLUnitOfWork(AbstractContextManager):
             cur.execute(
                 "SELECT plot_index,unlocked,developed,water,fertilizer,soil_health,crop_id,stage,"
                 "stage_growth,plant_age_minutes,mature,pest_level,disease_level,pest_status,"
-                "disease_status,pest_onset_ms,disease_onset_ms,active_fertilizers,active_medicines,"
+                "disease_status,pest_onset_ms,disease_onset_ms,grass_level,grass_status,grass_onset_ms,"
+                "active_fertilizers,active_medicines,"
                 "quality_score,mature_yield,harvest_quantity,daily_plant_count,daily_net_income,"
                 "planted_at_ms,progress,harvestable,last_boost_key,last_watered_at_ms "
                 "FROM player_farm_plots WHERE user_id=%s ORDER BY plot_index",
@@ -167,8 +168,11 @@ class MySQLUnitOfWork(AbstractContextManager):
                 disease_level=float(plot["disease_level"] or 0),
                 pest_status=str(plot["pest_status"] or "NONE"),
                 disease_status=str(plot["disease_status"] or "NONE"),
+                grass_level=float(plot.get("grass_level", 0) or 0),
+                grass_status=str(plot.get("grass_status", "NONE") or "NONE"),
                 pest_onset_ms=int(plot["pest_onset_ms"]) if plot["pest_onset_ms"] is not None else None,
                 disease_onset_ms=int(plot["disease_onset_ms"]) if plot["disease_onset_ms"] is not None else None,
+                grass_onset_ms=int(plot["grass_onset_ms"]) if plot.get("grass_onset_ms") is not None else None,
                 active_fertilizers=[
                     ActiveFertilizer.from_dict(item)
                     for item in _json_load(plot["active_fertilizers"], []) or []
@@ -212,6 +216,7 @@ class MySQLUnitOfWork(AbstractContextManager):
                     plot.fertility, plot.soil_health, plot.crop_id, plot.stage, plot.stage_growth,
                     plot.plant_age_minutes, plot.mature, plot.pest_level, plot.disease_level,
                     plot.pest_status, plot.disease_status, plot.pest_onset_ms, plot.disease_onset_ms,
+                    plot.grass_level, plot.grass_status, plot.grass_onset_ms,
                     json.dumps([item.to_dict() for item in plot.active_fertilizers], ensure_ascii=False),
                     json.dumps([item.to_dict() for item in plot.active_medicines], ensure_ascii=False),
                     plot.quality_score, plot.mature_yield, plot.harvest_quantity,
@@ -225,11 +230,12 @@ class MySQLUnitOfWork(AbstractContextManager):
                 "INSERT INTO player_farm_plots "
                 "(user_id,plot_index,unlocked,developed,water,fertilizer,soil_health,crop_id,stage,"
                 "stage_growth,plant_age_minutes,mature,pest_level,disease_level,pest_status,"
-                "disease_status,pest_onset_ms,disease_onset_ms,active_fertilizers,active_medicines,"
+                "disease_status,pest_onset_ms,disease_onset_ms,grass_level,grass_status,grass_onset_ms,"
+                "active_fertilizers,active_medicines,"
                 "quality_score,mature_yield,harvest_quantity,daily_plant_count,daily_net_income,"
                 "planted_at_ms,progress,harvestable,last_boost_key,last_watered_at_ms) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
-                "%s,%s,%s,%s,%s,%s) "
+                "%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                 "ON DUPLICATE KEY UPDATE unlocked=VALUES(unlocked),developed=VALUES(developed),"
                 "water=VALUES(water),fertilizer=VALUES(fertilizer),soil_health=VALUES(soil_health),"
                 "crop_id=VALUES(crop_id),stage=VALUES(stage),stage_growth=VALUES(stage_growth),"
@@ -237,6 +243,8 @@ class MySQLUnitOfWork(AbstractContextManager):
                 "pest_level=VALUES(pest_level),disease_level=VALUES(disease_level),"
                 "pest_status=VALUES(pest_status),disease_status=VALUES(disease_status),"
                 "pest_onset_ms=VALUES(pest_onset_ms),disease_onset_ms=VALUES(disease_onset_ms),"
+                "grass_level=VALUES(grass_level),grass_status=VALUES(grass_status),"
+                "grass_onset_ms=VALUES(grass_onset_ms),"
                 "active_fertilizers=VALUES(active_fertilizers),"
                 "active_medicines=VALUES(active_medicines),quality_score=VALUES(quality_score),"
                 "mature_yield=VALUES(mature_yield),harvest_quantity=VALUES(harvest_quantity),"

@@ -150,6 +150,7 @@ function normalizePlot(id: number, src: Partial<PlotData>): PlotData {
     id,
     pest: { ...base.pest, ...(src.pest || {}) },
     disease: { ...base.disease, ...(src.disease || {}) },
+    grass: { ...base.grass, ...(src.grass || {}) },
     activeFertilizers: Array.isArray(src.activeFertilizers) ? src.activeFertilizers : [],
     activeMedicines: Array.isArray(src.activeMedicines) ? src.activeMedicines : [],
   };

@@ -40,7 +40,7 @@ export interface RemoteProfile {
   createdAt: number;
 }
 
-export type RemoteItemCategory = 'seed' | 'fruit' | 'fert' | 'medicine';
+export type RemoteItemCategory = 'seed' | 'fruit' | 'fert' | 'pesticide' | 'medicine';
 
 export interface RemoteItem {
   id: string;
@@ -91,12 +91,14 @@ export interface RemoteMedicine {
   id: string;
   name: string;
   itemId: string;
-  target: 'pest' | 'disease';
+  target: 'pest' | 'disease' | 'grass';
   power: number;
   perMinute: boolean;
   duration: number;
   price: number;
 }
+
+export type RemotePesticide = RemoteMedicine;
 
 export interface RemoteLandUnlockRow {
   index: number;
@@ -178,6 +180,7 @@ export interface RemoteCatalog {
   crops: RemoteCrop[];
   fertilizers: RemoteFertilizer[];
   medicines: RemoteMedicine[];
+  pesticides?: RemotePesticide[];
   land: RemoteLandRules;
   growth: RemoteGrowthRules;
   seasons: RemoteSeason[];
@@ -228,6 +231,7 @@ export interface RemotePlot {
   harvestQuantity: number;
   pest: RemotePlotEvent;
   disease: RemotePlotEvent;
+  grass: RemotePlotEvent;
   activeFertilizers: RemoteActiveFertilizer[];
   activeMedicines: RemoteActiveMedicine[];
   bestFertilizerId: string;

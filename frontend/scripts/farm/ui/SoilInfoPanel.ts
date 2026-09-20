@@ -10,7 +10,7 @@ import { _decorator, Button, Component, Label, Node, ScrollView, Sprite, UITrans
 import { LAND } from '../config/LandConfig';
 import { getCropDef } from '../config/CropConfig';
 import { fertilizerName } from '../config/FertilizerConfig';
-import { medicineName } from '../config/MedicineConfig';
+import { pesticideName } from '../config/PesticideConfig';
 import { FarmModel } from '../data/FarmModel';
 import type { PlotData } from '../data/PlotData';
 
@@ -172,13 +172,14 @@ export class SoilInfoPanel extends Component {
     if (this.medicineLabel) {
       this.medicineLabel.string = plot.activeMedicines.length
         ? plot.activeMedicines.map(item =>
-          `${medicineName(item.id)} 剩余 ${Math.ceil(item.remainingMinutes)} 分钟`).join('\n')
+          `${pesticideName(item.id)} 剩余 ${Math.ceil(item.remainingMinutes)} 分钟`).join('\n')
         : '暂无生效药品';
     }
     const events: string[] = [];
     if (plot.pest.status === 'ACTIVE') events.push(`害虫 Lv.${Math.round(plot.pest.level)}`);
     if (plot.disease.status === 'ACTIVE') events.push(`病害 Lv.${Math.round(plot.disease.level)}`);
-    if (this.eventLabel) this.eventLabel.string = events.join(' / ') || '无病虫害';
+    if (plot.grass && plot.grass.status === 'ACTIVE') events.push(`杂草 Lv.${Math.round(plot.grass.level)}`);
+    if (this.eventLabel) this.eventLabel.string = events.join(' / ') || '无病虫害/杂草';
     setActive(this.medicineButton, events.length > 0);
   }
 }

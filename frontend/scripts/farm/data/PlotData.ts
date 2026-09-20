@@ -33,6 +33,9 @@ export interface PlotEvent {
   onsetAt: number | null;
 }
 
+/** 杂草事件（与 PlotEvent 结构相同，但单独命名以便区分） */
+export type GrassEvent = PlotEvent;
+
 export interface ActiveFertilizer {
   id: string;
   name: string;
@@ -70,6 +73,7 @@ export interface PlotData {
   harvestQuantity: number;
   pest: PlotEvent;
   disease: PlotEvent;
+  grass: GrassEvent;
   activeFertilizers: ActiveFertilizer[];
   activeMedicines: ActiveMedicine[];
   bestFertilizerId: string;
@@ -119,6 +123,7 @@ export function emptyPlot(id: number): PlotData {
     harvestQuantity: 0,
     pest: { level: 0, status: 'NONE', onsetAt: null },
     disease: { level: 0, status: 'NONE', onsetAt: null },
+    grass: { level: 0, status: 'NONE', onsetAt: null },
     activeFertilizers: [],
     activeMedicines: [],
     bestFertilizerId: '',

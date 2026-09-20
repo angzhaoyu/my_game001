@@ -1,0 +1,7 @@
+id,name,item_id,target,power,per_minute,duration_minutes,price
+insecticide_basic,普通杀虫剂,med_insecticide_basic,pest,40.0,false,7.0,3
+insecticide_advanced,高级杀虫剂,med_insecticide_advanced,pest,70.0,false,15.0,5
+bio_agent,生物菌剂,med_bio_agent,pest,30.0,false,15.0,4
+grass,除草剂,med_grass,grass,100.0,true,30.0,4
+fungicide_basic,普通杀菌剂,med_fungicide_basic,disease,40.0,false,7.0,3
+fungicide_advanced,高级杀菌剂,med_fungicide_advanced,disease,70.0,false,15.0,6

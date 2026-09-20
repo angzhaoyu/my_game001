@@ -14,7 +14,7 @@ import {
 } from 'cc';
 import { LAND, unlockRow } from '../config/LandConfig';
 import { getCropDef } from '../config/CropConfig';
-import { getMedicineDef } from '../config/MedicineConfig';
+import { getPesticideDef } from '../config/PesticideConfig';
 import { FarmModel } from '../data/FarmModel';
 import { InventoryModel } from '../data/InventoryModel';
 import { PlayerModel } from '../data/PlayerModel';
@@ -115,6 +115,12 @@ export class LandView extends Component {
   }
 
   get currentTool(): ToolMode { return this.tool; }
+
+  /** 由 GameRoot 调用：WaterPrompt 确认后设置待浇水次数并切换工具 */
+  setWaterTimes(times: number): void {
+    this.pendingWaterTimes = times;
+    this.setTool('water');
+  }
 
   render(): void {
     if (!this.farm || !this.player) return;
@@ -370,24 +376,27 @@ export class LandView extends Component {
 
   /** 由 SoilInfoPanel 的「处理病虫害」按钮触发 */
   openMedicinePicker(plotId: number): void {
-    if (!this.medicinePicker) { this.onToast('场景缺少 MedicinePanel 面板'); return; }
+    if (!this.medicinePicker) { this.onToast('场景缺少 PesticidePanel 面板'); return; }
     const rows: PickerRow[] = [];
-    for (const stack of this.inventory.query({ category: 'medicine' })) {
-      const definition = getMedicineDef(stack.id.replace(/^med_/, ''));
+    for (const stack of this.inventory.query({ category: 'pesticide' })) {
+      const definition = getPesticideDef(stack.id.replace(/^med_/, ''));
       if (!definition) continue;
-      const target = definition.target === 'pest' ? '害虫' : '病害';
+      const target = definition.target === 'pest' ? '害虫'
+        : definition.target === 'grass' ? '杂草' : '病害';
       rows.push({
         key: stack.id,
         name: definition.name,
         icon: stack.icon,
         sub: `${target} -${definition.power}${definition.perMinute ? '/分钟' : ''} ×${stack.count}`,
+        category: 'pesticide',
+        count: stack.count,
       });
     }
     if (rows.length === 0) {
-      this.onToast('背包里没有药品，请先去商店购买');
+      this.onToast('背包里没有药剂，请先去商店购买');
       return;
     }
-    this.medicinePicker.open('处理病虫害', '选择要使用的药品', rows, (itemId) => {
+    this.medicinePicker.open('处理病虫害', '选择要使用的药剂', rows, (itemId) => {
       void this.doMedicine(plotId, itemId);
     });
   }

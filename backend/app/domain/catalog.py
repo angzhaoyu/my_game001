@@ -21,7 +21,8 @@ from typing import Any, Dict, List, Tuple
 SEED = "seed"
 FRUIT = "fruit"
 FERT = "fert"
-MEDICINE = "medicine"
+PESTICIDE = "pesticide"
+MEDICINE = "medicine"  # backward compat
 
 
 @dataclass(frozen=True)
@@ -255,19 +256,21 @@ for _fid, _fname, _ftype, _amount, _duration, _soil, _price in _FERTILIZER_ROWS:
 
 
 # --------------------------------------------------------------------------
-# 药品
+# 药剂（原药品/medicines，重命名为 pesticides，新增 grass 除草剂）
 # --------------------------------------------------------------------------
 
 PEST = "pest"
 DISEASE = "disease"
+GRASS = "grass"
 
 
 @dataclass(frozen=True)
 class MedicineDef:
+    """药剂定义（保留 MedicineDef 名称以兼容旧代码）"""
     id: str
     name: str
     item_id: str
-    target: str           # pest / disease
+    target: str           # pest / disease / grass
     power: float          # 一次性降低的等级
     per_minute: bool      # True：每分钟持续降低
     duration_minutes: float
@@ -279,7 +282,7 @@ _MEDICINE_ROWS: List[Tuple[Any, ...]] = [
     ("insecticide_basic", "普通杀虫剂", PEST, 40, False, 7, 3),
     ("insecticide_advanced", "高级杀虫剂", PEST, 70, False, 15, 5),
     ("bio_agent", "生物菌剂", PEST, 30, False, 15, 4),
-    ("pest_repellent", "驱虫植物", PEST, 10, True, 30, 4),
+    ("grass", "除草剂", GRASS, 100, True, 30, 4),
     ("fungicide_basic", "普通杀菌剂", DISEASE, 40, False, 7, 3),
     ("fungicide_advanced", "高级杀菌剂", DISEASE, 70, False, 15, 6),
 ]
@@ -297,11 +300,36 @@ for _mid, _mname, _target, _power, _per_minute, _duration, _price in _MEDICINE_R
         price=int(_price),
     )
     ITEMS[f"med_{_mid}"] = ItemDef(
-        f"med_{_mid}", _mname, f"med_{_mid}", MEDICINE,
+        f"med_{_mid}", _mname, f"med_{_mid}", PESTICIDE,
         max(1, int(_price // 2)), _price, int(_power),
     )
 
 SHOP_ITEMS = {item_id: item for item_id, item in ITEMS.items() if item.price is not None}
+
+
+# --------------------------------------------------------------------------
+# 目录校验
+# --------------------------------------------------------------------------
+
+_VALID_MEDICINE_TARGETS = {"pest", "disease", "grass"}
+
+
+def validate_catalog() -> None:
+    """启动时校验目录数据完整性，防止脏数据流入客户端。"""
+    for crop in CROPS.values():
+        if not crop.id or not crop.name:
+            raise ValueError(f"invalid crop: {crop.id}")
+    for fert in FERTILIZERS.values():
+        if not fert.id or not fert.name:
+            raise ValueError(f"invalid fertilizer: {fert.id}")
+    for med in MEDICINES.values():
+        if not med.id or not med.name:
+            raise ValueError(f"invalid medicine: {med.id}")
+        if med.target not in _VALID_MEDICINE_TARGETS:
+            raise ValueError(f"invalid medicine target: {med.id} -> {med.target}")
+
+
+validate_catalog()
 
 
 # --------------------------------------------------------------------------
@@ -561,6 +589,7 @@ def public_catalog() -> Dict[str, Any]:
         "crops": [_crop_json(crop) for crop in CROPS.values()],
         "fertilizers": [_fertilizer_json(fert) for fert in FERTILIZERS.values()],
         "medicines": [_medicine_json(med) for med in MEDICINES.values()],
+        "pesticides": [_medicine_json(med) for med in MEDICINES.values()],
         "land": LAND_RULES,
         "growth": GROWTH_RULES,
         "seasons": [

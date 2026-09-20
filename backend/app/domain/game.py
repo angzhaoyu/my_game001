@@ -190,11 +190,20 @@ class GameEngine:
     ) -> None:
         seed = state.world_seed_value()
         minute = int(world["minuteIndex"])
-        for target in ("pest", "disease"):
-            active = plot.pest_status if target == "pest" else plot.disease_status
+        for target in ("pest", "disease", "grass"):
+            if target == "pest":
+                active = plot.pest_status
+            elif target == "disease":
+                active = plot.disease_status
+            else:
+                active = plot.grass_status
             if active == "ACTIVE":
                 continue
-            chance = appear_chance(crop, plot, world, target)
+            if target == "grass":
+                # 杂草出现概率较低（约 0.01%/分钟），30分钟达到100级
+                chance = 0.0001
+            else:
+                chance = appear_chance(crop, plot, world, target)
             roll = rand01(seed, target, plot.id, minute)
             if roll < chance:
                 onset_damage = float(GROWTH_RULES["onsetQualityDamage"])
@@ -202,33 +211,47 @@ class GameEngine:
                     plot.pest_status = "ACTIVE"
                     plot.pest_onset_ms = timestamp_ms
                     plot.pest_level = 0.0
-                else:
+                elif target == "disease":
                     plot.disease_status = "ACTIVE"
                     plot.disease_onset_ms = timestamp_ms
                     plot.disease_level = 0.0
+                else:
+                    plot.grass_status = "ACTIVE"
+                    plot.grass_onset_ms = timestamp_ms
+                    plot.grass_level = 0.0
                 plot.quality_score = clamp(plot.quality_score - onset_damage, 0.0, 100.0)
 
     @staticmethod
     def _advance_event_levels(plot: Plot, timestamp_ms: int) -> None:
         """事件等级按持续时间升级；药品降低的等级不会被曲线抹掉。"""
-        for target in ("pest", "disease"):
+        for target in ("pest", "disease", "grass"):
             if target == "pest":
                 status, onset, level = plot.pest_status, plot.pest_onset_ms, plot.pest_level
-            else:
+            elif target == "disease":
                 status, onset, level = plot.disease_status, plot.disease_onset_ms, plot.disease_level
+            else:
+                status, onset, level = plot.grass_status, plot.grass_onset_ms, plot.grass_level
             if status != "ACTIVE" or onset is None:
                 if target == "pest":
                     plot.pest_level = 0.0
-                else:
+                elif target == "disease":
                     plot.disease_level = 0.0
+                else:
+                    plot.grass_level = 0.0
                 continue
             age = max(0.0, (timestamp_ms - int(onset)) / 60000.0)
-            delta = event_level_delta(max(0.0, age - 1.0), age)
+            if target == "grass":
+                # 杂草 30 分钟达到 100 级（100/30 ≈ 3.33/分钟）
+                delta = 100.0 / 30.0
+            else:
+                delta = event_level_delta(max(0.0, age - 1.0), age)
             level = clamp(level + delta, 0.0, 100.0)
             if target == "pest":
                 plot.pest_level = level
-            else:
+            elif target == "disease":
                 plot.disease_level = level
+            else:
+                plot.grass_level = level
 
     @staticmethod
     def _settle_quality(plot: Plot, crop: Any, world: Dict[str, Any], context: Any) -> None:
@@ -257,6 +280,11 @@ class GameEngine:
                 if plot.disease_level <= 0:
                     plot.disease_status = "NONE"
                     plot.disease_onset_ms = None
+            if medicine.target == "grass" and plot.grass_status == "ACTIVE":
+                plot.grass_level = max(0.0, plot.grass_level - medicine.power)
+                if plot.grass_level <= 0:
+                    plot.grass_status = "NONE"
+                    plot.grass_onset_ms = None
 
     # ------------------------------------------------------------------
     # 命令
@@ -436,12 +464,18 @@ class GameEngine:
                     plot.pest_status = "NONE"
                     plot.pest_onset_ms = None
                     plot.pest_level = 0.0
-            else:
+            elif medicine.target == "disease":
                 plot.disease_level = max(0.0, plot.disease_level - medicine.power)
                 if plot.disease_level <= 0:
                     plot.disease_status = "NONE"
                     plot.disease_onset_ms = None
                     plot.disease_level = 0.0
+            elif medicine.target == "grass":
+                plot.grass_level = max(0.0, plot.grass_level - medicine.power)
+                if plot.grass_level <= 0:
+                    plot.grass_status = "NONE"
+                    plot.grass_onset_ms = None
+                    plot.grass_level = 0.0
             existing = next((item for item in plot.active_medicines
                              if item.medicine_id == medicine.id), None)
             if existing is None:
@@ -453,7 +487,7 @@ class GameEngine:
         state.daily.medicine_cost += medicine.price
         self._record_action(state, plot.id, "apply_medicine", now_ms,
                             medicine_id=medicine.id, cost=medicine.price)
-        target_name = "害虫" if medicine.target == "pest" else "病害"
+        target_name = "害虫" if medicine.target == "pest" else ("病害" if medicine.target == "disease" else "杂草")
         return ActionResult(f"使用了{medicine.name}，{target_name}等级 -{medicine.power:.0f}")
 
     def _handle_harvest(self, state: GameAggregate, payload: Dict[str, Any], now_ms: int) -> ActionResult:
