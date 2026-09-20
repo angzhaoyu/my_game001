@@ -258,12 +258,18 @@ ShopPanel                        Node + ShopPanel.ts + Widget(四边=0) + BlockI
 │  ├─ Title                   Label           「商店」
 │  └─ CloseBth                Node + Button   关闭按钮
 ├─ Toolbar                    Node
-│  └─ left                    Node
-   │     ├─ sort                 Label           「排序」
-   │     ├─ time                 Node + Button   时间（价格）排序
-   │     │  └─ Label             Label           「时间」
-   │     └─ name                 Node + Button   名称排序
-   │        └─ Label             Label           「名称」
+│  ├─ left                    Node
+│  │  ├─ sort                 Label           「排序」
+│  │  ├─ time                 Node + Button   时间（价格）排序
+│  │  │  └─ Label             Label           「时间」
+│  │  └─ name                 Node + Button   名称排序
+│  │     └─ Label             Label           「名称」
+│  └─ right                   Node
+│     ├─ all                  Node + Button   全部筛选
+│     ├─ seed                 Node + Button   种子筛选
+│     ├─ fertilizer           Node + Button   化肥筛选
+│     └─ pesticide            Node + Button   药剂筛选
+
 ├─ ScrollView                 ScrollView
 │  └─ view                    Node + Mask
    │     └─ content              Node + Layout   列表容器（放 ShopItem 预制体实例）

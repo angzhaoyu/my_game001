@@ -110,7 +110,7 @@ export class ShopPanel extends Component {
       const right = this.findDescendant(toolbar, 'right');
       if (right) {
         const catList: ShopCategory[] = ['all', 'seed', 'fert', 'pesticide'];
-        const btnNames = ['all', 'seed', 'fert', 'pesticide'];
+        const btnNames = ['all', 'seed', 'fertilizer', 'pesticide'];
         btnNames.forEach((name, i) => {
           const tabNode = right.getChildByName(name);
           if (tabNode) {
