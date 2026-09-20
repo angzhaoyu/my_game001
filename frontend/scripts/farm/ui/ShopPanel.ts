@@ -30,6 +30,7 @@ export class ShopPanel extends Component {
   private contentNode: Node | null = null;
   private goldLabel: Label | null = null;
   private tabs: { node: Node; lb: Label | null; cat: ShopCategory }[] = [];
+  private cellSize: number = 120; // 默认值，会被 detectCellSize 动态计算覆盖
 
   /** 关闭回调：施肥框跳转商店后靠它回到施肥框 */
   onClose: () => void = () => {};
@@ -73,6 +74,9 @@ export class ShopPanel extends Component {
       if (ut) {
         ut.setAnchorPoint(0.5, 1);
       }
+      // 根据 ScrollView 实际宽度动态计算格子尺寸
+      this.cellSize = this.detectCellSize(layout);
+      layout.cellSize = new Size(this.cellSize, this.cellSize);
     }
 
     if (header) {
@@ -153,6 +157,42 @@ export class ShopPanel extends Component {
     this.onClose();
   }
 
+  /**
+   * 根据 ScrollView 实际宽度动态计算格子尺寸，保持与屏幕的百分比关系。
+   * 公式：cellSize = (可用宽度 - 间距总和) / 列数
+   */
+  private detectCellSize(layout: Layout): number {
+    // 获取 ScrollView 的实际宽度
+    const scrollViewNode = this.scrollView?.node;
+    if (!scrollViewNode) return 120;
+    
+    const scrollUT = scrollViewNode.getComponent(UITransform);
+    if (!scrollUT) return 120;
+    
+    const viewWidth = scrollUT.contentSize.width;
+    
+    // 从 Layout 读取 padding 和 spacing
+    const paddingLeft = layout.paddingLeft || 20;
+    const paddingRight = layout.paddingRight || 20;
+    const spacingX = layout.spacingX || 20;
+    
+    // 计算列数：基于设计稿宽度 720px 时显示 5 列
+    // 其他宽度按比例计算列数，最少 3 列，最多 8 列
+    const designWidth = 720;
+    const designCols = 5;
+    const cols = Math.max(3, Math.min(8, Math.round((viewWidth / designWidth) * designCols)));
+    
+    // 计算可用宽度
+    const availableWidth = viewWidth - paddingLeft - paddingRight;
+    
+    // 计算每个格子的宽度
+    const totalSpacing = (cols - 1) * spacingX;
+    const cellWidth = (availableWidth - totalSpacing) / cols;
+    
+    // 限制在合理范围内
+    return Math.max(80, Math.min(200, Math.floor(cellWidth)));
+  }
+
   render() {
     if (!this.contentNode) return;
     const list: ShopDef[] = SHOP_ITEMS.filter(s => s.category === this.category);
@@ -187,6 +227,9 @@ export class ShopPanel extends Component {
       ut.setAnchorPoint(0.5, 1);
     }
     if (layout) {
+      // 每次渲染时重新计算格子尺寸以适应当前屏幕宽度
+      this.cellSize = this.detectCellSize(layout);
+      layout.cellSize = new Size(this.cellSize, this.cellSize);
       layout.updateLayout();
     }
     this.normalizeDepth();

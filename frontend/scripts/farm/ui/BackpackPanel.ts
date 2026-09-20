@@ -29,6 +29,7 @@ export class BackpackPanel extends Component {
   private footerLabel: Label | null = null;
   private tabs: { node: Node; lb: Label | null; cat: ItemCategory | 'all' }[] = [];
   private sortBtns: { node: Node; lb: Label | null; key: 'time' | 'name' }[] = [];
+  private cellSize: number = 120; // 默认值，会被 detectCellSize 动态计算覆盖
 
   private category: ItemCategory | 'all' = 'all';
   private sortKey: 'time' | 'name' = 'time';
@@ -71,6 +72,9 @@ export class BackpackPanel extends Component {
       if (ut) {
         ut.setAnchorPoint(0.5, 1);
       }
+      // 根据 ScrollView 实际宽度动态计算格子尺寸
+      this.cellSize = this.detectCellSize(layout);
+      layout.cellSize = new Size(this.cellSize, this.cellSize);
     }
 
     if (header) {
@@ -149,6 +153,34 @@ export class BackpackPanel extends Component {
     this.node.active = false;
   }
 
+  /**
+   * 根据 ScrollView 实际宽度动态计算格子尺寸，保持与屏幕的百分比关系。
+   * 公式：cellSize = (可用宽度 - 间距总和) / 列数
+   */
+  private detectCellSize(layout: Layout): number {
+    const scrollViewNode = this.scrollView?.node;
+    if (!scrollViewNode) return 120;
+    
+    const scrollUT = scrollViewNode.getComponent(UITransform);
+    if (!scrollUT) return 120;
+    
+    const viewWidth = scrollUT.contentSize.width;
+    
+    const paddingLeft = layout.paddingLeft || 20;
+    const paddingRight = layout.paddingRight || 20;
+    const spacingX = layout.spacingX || 20;
+    
+    const designWidth = 720;
+    const designCols = 5;
+    const cols = Math.max(3, Math.min(8, Math.round((viewWidth / designWidth) * designCols)));
+    
+    const availableWidth = viewWidth - paddingLeft - paddingRight;
+    const totalSpacing = (cols - 1) * spacingX;
+    const cellWidth = (availableWidth - totalSpacing) / cols;
+    
+    return Math.max(80, Math.min(200, Math.floor(cellWidth)));
+  }
+
   render() {
     if (!this.contentNode) return;
     const list = this.inventory.query({ category: this.category, sort: this.sortKey, dir: this.sortDir });
@@ -187,6 +219,9 @@ export class BackpackPanel extends Component {
       ut.setAnchorPoint(0.5, 1);
     }
     if (layout) {
+      // 每次渲染时重新计算格子尺寸以适应当前屏幕宽度
+      this.cellSize = this.detectCellSize(layout);
+      layout.cellSize = new Size(this.cellSize, this.cellSize);
       layout.updateLayout();
     }
     if (this.footerLabel) {

@@ -178,41 +178,32 @@ export class FertilizePanel extends Component {
    * 检测格子尺寸：优先读取已有子节点的 UITransform，其次读取 Layout 的 cellSize，
    * 最后才根据 ScrollView 宽度动态计算。
    */
+  /**
+   * 根据 ScrollView 实际宽度动态计算格子尺寸，保持与屏幕的百分比关系。
+   * 公式：cellSize = (可用宽度 - 间距总和) / 列数
+   */
   private detectCellSize(layout: Layout | null, content: Node): number {
-    // 1. 优先读取已有子节点（编辑器放入的预制体）的 UITransform 尺寸
-    if (content.children.length > 0) {
-      const firstChild = content.children[0];
-      const childUT = firstChild.getComponent(UITransform);
-      if (childUT && childUT.contentSize.width > 0) {
-        return childUT.contentSize.width;
-      }
-    }
-
-    // 2. 读取 Layout 组件中已设置的 cellSize
-    if (layout && layout.cellSize.width > 0) {
-      return layout.cellSize.width;
-    }
-
-    // 3. 兜底：根据 ScrollView 宽度动态计算
     const scrollView = content.parent?.parent?.getComponent(ScrollView);
-    if (scrollView) {
-      const scrollUT = scrollView.node.getComponent(UITransform);
-      const viewWidth = scrollUT ? scrollUT.contentSize.width : 720;
-
-      const padL = layout ? layout.paddingLeft : 20;
-      const padR = layout ? layout.paddingRight : 0;
-      const spX = layout ? layout.spacingX : 20;
-
-      const cols = (layout && layout.type === Layout.Type.GRID)
-        ? Math.max(1, (layout as any).constraintNum || 5)
-        : 5;
-
-      const available = viewWidth - padL - padR;
-      const cell = Math.floor((available - (cols - 1) * spX) / cols);
-      return Math.max(60, Math.min(cell, 160));
-    }
-
-    return 120;
+    if (!scrollView) return 120;
+    
+    const scrollUT = scrollView.node.getComponent(UITransform);
+    if (!scrollUT) return 120;
+    
+    const viewWidth = scrollUT.contentSize.width;
+    
+    const paddingLeft = layout ? layout.paddingLeft : 20;
+    const paddingRight = layout ? layout.paddingRight : 20;
+    const spacingX = layout ? layout.spacingX : 20;
+    
+    const designWidth = 720;
+    const designCols = 5;
+    const cols = Math.max(3, Math.min(8, Math.round((viewWidth / designWidth) * designCols)));
+    
+    const availableWidth = viewWidth - paddingLeft - paddingRight;
+    const totalSpacing = (cols - 1) * spacingX;
+    const cellWidth = (availableWidth - totalSpacing) / cols;
+    
+    return Math.max(80, Math.min(200, Math.floor(cellWidth)));
   }
 
   private createFallbackCell(): Node {
