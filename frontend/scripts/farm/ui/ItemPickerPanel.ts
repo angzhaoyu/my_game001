@@ -78,7 +78,6 @@ export class ItemPickerPanel extends Component {
 
   close(): void {
     this.isOpen = false;
-  private cellSize = 120;
     this.node.active = false;
   }
 
